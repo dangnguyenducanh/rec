@@ -1,0 +1,11 @@
+[project]
+name = "receipt"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+  "opencv-python-headless", "paddleocr", "paddlepaddle-gpu", "pytesseract",
+  "sklearn-crfsuite", "scikit-learn", "transformers", "torch", "datasets", "seqeval", "scipy",
+  "fastapi", "uvicorn[standard]", "python-multipart", "psycopg[binary]", "pydantic",
+]
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]

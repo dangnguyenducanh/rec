@@ -1,0 +1,1 @@
+-- Spec §4 stage 7: receipts, items, corrections tables.
