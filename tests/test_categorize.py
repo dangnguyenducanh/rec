@@ -71,6 +71,12 @@ def test_unsure_merchant_settles_a_split(monkeypatch, tmp_path, pm, want):
     categorize._load.cache_clear()
 
 
+def test_fuel_brand_is_fuel(mode):
+    # Shell has far more fuel stations than Shell-branded convenience stores in the public data
+    if mode == "models":
+        assert categorize.merchant_category("SHELL") == ("transport_fuel", True)
+
+
 def test_general_store_receipt_goes_by_money(mode):
     # A general store (Walmart) hands no category to its items; the receipt follows the money.
     if mode == "models":

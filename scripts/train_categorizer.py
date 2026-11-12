@@ -2,7 +2,7 @@
 
 Keyword baseline vs TF-IDF char 3-5-grams + LogisticRegression; C picked and merchant theta tuned on
 val; scored once on test. Merchants also get an exact-name lookup (merchant_key -> majority category over every
-labelled name, lookup-only rows included); reported numbers use a lookup of train names only.
+NSI brand entry and OSM POI, lookup-only ones included); reported numbers use a lookup of train names only.
 Writes models/categorizer/{items,merchants}.joblib and eval/categories.json.
 Run: .venv/bin/python -s scripts/train_categorizer.py
 """
@@ -20,7 +20,7 @@ from sklearn.metrics import f1_score
 from sklearn.pipeline import make_pipeline, make_union
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from build_category_data import majority, receipt_style  # noqa: E402  (same scripts/ dir)
+from build_category_data import majority, norm, nsi_rows, osm_rows, receipt_style, split_of  # noqa: E402
 from receipt import categorize  # noqa: E402
 from receipt.schema import Receipt  # noqa: E402
 
@@ -47,10 +47,11 @@ def fit(train, val, class_weight):
     return best
 
 
-def lookup(d) -> dict:
-    """merchant_key -> majority category of the names in d (keys of 3+ characters)."""
+def lookup(rows) -> dict:
+    """merchant_key -> majority category of (name, category) rows, one per NSI brand entry or OSM POI: a chain's
+    264 Shell stations outvote the name variants of its 95 Shell convenience stores (keys of 3+ characters)."""
     t = {}
-    for n, c in zip(d.name, d.category):
+    for n, c in rows:
         k = categorize.merchant_key(n)
         if len(k) >= 3:
             t.setdefault(k, collections.Counter())[c] += 1
@@ -59,7 +60,6 @@ def lookup(d) -> dict:
 
 def run(kind: str, table: dict, default: str, size: bool) -> dict:
     d = pd.read_csv(f"data/categories/{kind}.csv", keep_default_na=False)
-    clean = d[~d.source.str.endswith("-rs")]
     d = d[~d.source.str.endswith("-lk")]  # lookup-only rows (incl. every "general"/"other" merchant) never train
     tr, va, te = (d[d.split == s] for s in ["train", "val", "test"])
     rs = [receipt_style(n, size) for n in te.name]  # receipt-style view of the held-out names
@@ -77,7 +77,8 @@ def run(kind: str, table: dict, default: str, size: bool) -> dict:
     if kind == "merchants":
         out["theta"], res["theta"], res["with_train_lookup"] = tune_theta(m, va), {}, {}
         out["theta_class"] = tune_theta_class(m, va, out["theta"])
-        lk = lookup(clean[clean.split == "train"])
+        raw = [(n, c, split_of(key or norm(n))) for n, c, _, key in [*nsi_rows(), *osm_rows()]]  # cached raw files
+        lk = lookup((n, c) for n, c, sp in raw if sp == "train")
         for name, part in [("val", va), ("test", te)]:
             p = m.predict_proba(part.name)
             pred, gold = m.classes_[p.argmax(1)], part.category.to_numpy()
@@ -89,7 +90,7 @@ def run(kind: str, table: dict, default: str, size: bool) -> dict:
             res["with_train_lookup"][name] = {"hits": sum(h is not None for h in hit), "macro_f1": macro(gold, pred),
                                               "coverage": round(float(ok.mean()), 4), "precision": round(float((pred == gold)[ok].mean()), 4)}
         res["theta"]["value"], res["theta"]["class"] = out["theta"], out["theta_class"]
-        out["lookup"] = lookup(clean)
+        out["lookup"] = lookup((n, c) for n, c, _ in raw)
     OUT.mkdir(parents=True, exist_ok=True)
     joblib.dump(out, OUT / f"{kind}.joblib")
     return res
