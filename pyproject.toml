@@ -2,10 +2,13 @@
 name = "receipt"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = [
-  "opencv-python-headless", "paddleocr", "paddlepaddle-gpu", "pytesseract",
-  "sklearn-crfsuite", "scikit-learn", "transformers", "torch", "datasets", "seqeval", "scipy",
-  "fastapi", "uvicorn[standard]", "python-multipart", "psycopg[binary]", "pydantic",
-]
+# Web app (API + stub pipeline). ML deps are an extra so the web lane installs in seconds.
+dependencies = ["fastapi", "uvicorn[standard]", "python-multipart", "psycopg[binary]", "pydantic", "pillow"]
+
 [project.optional-dependencies]
-dev = ["pytest", "httpx"]
+ml = ["opencv-python-headless", "paddleocr", "paddlepaddle-gpu", "pytesseract", "sklearn-crfsuite",
+      "scikit-learn", "transformers", "torch", "datasets", "seqeval", "scipy"]
+dev = ["pytest", "httpx", "playwright"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

@@ -36,7 +36,6 @@ with **one honest benchmark** that every component is judged by.
 | **CORD v2** | 800 / 100 / 100 | Indonesian. 4-corner quads in raw pixels. `row_id`, `group_id`, `roi`. Shop/payment labels removed, shop names blurred. CC BY 4.0. | Items + row grouping + crop eval. Extra training data (experiment only) |
 | **SROIE 2019** | 626 / — / 347 (361 in `jsdnrs/ICDAR2019-SROIE`) | English scans (Malaysia). Fields: company, date, address, total — one string per document, uppercase. CC BY 4.0. | **Test-only** for header fields; rules baseline dev |
 | ~~FUNSD~~ | — | Forms, not receipts | Dropped |
-| **Own photos** | — / — / ~30 | Your phone photos, hand-labeled | Real-world e2e test |
 
 Official test splits are frozen and never used for tuning.
 
@@ -130,7 +129,8 @@ benchmark compares extractors, not assembly code.
 ### Stage 7 — Validation, storage, API
 - Checks: Σ item prices ≈ subtotal (±0.01); subtotal + tax (+ tips) ≈ total; date parses.
   Any failure → `needs_review = true` with a reason.
-- Postgres: `receipts` (contract fields + `raw_ocr jsonb`, `image_path`, `created_at`) and `items`.
+- Postgres: `receipts` (`data jsonb` = the contract JSON, `extractor`, `raw_ocr jsonb`, `image_path`,
+  `created_at`) and `corrections` (before/after JSON per edit). Stats query items via `jsonb_array_elements`.
   User edits via `PATCH` are saved and kept as `corrections` — new training labels for stage 4.
 - FastAPI, synchronous, no auth:
   `POST /receipts` (multipart image) · `GET /receipts` · `GET /receipts/{id}` ·
@@ -178,7 +178,7 @@ masking, item matching) — it is the one piece of code everything else trusts.
   Cloudflare Tunnel because the Vercel page is HTTPS. CORS allows the Vercel domain only.
   A quick tunnel (`trycloudflare.com`) changes URL on restart → redeploy with the new
   `VITE_API_URL`; a named tunnel needs a domain on Cloudflare (open item).
-- Ports (builder's call, avoiding 18200/18280 used by another project): API 18300, Postgres 18332.
+- Ports (builder's call, avoiding 18200/18280 used by another project): API 18300, Postgres 18332, Vite dev 18373.
 
 ## 7. Directory layout
 
@@ -243,7 +243,7 @@ Lane I                                         ████ swap stub → real p
 | **V Vision/OCR** | now (needs only images) | Stage 1 + 2 + 3, `build_ocr_cache.py` for Paddle (+ Tesseract on test) | Paddle cache for all splits; `--ocr paddle` benchmark rows; ablation rows per preprocessing step |
 | **M Models** | Lane 0 done | `rules` → `crf` (CPU, minutes) → `roberta` (bg) → `layoutlmv3` phase A (bg) → phase B once Lane V cache exists | One benchmark row per extractor × OCR source |
 | **C Categories** | Lane 0 done | Pre-label item/merchant names, you hand-correct, train classifier | Macro-F1 on test split; receipt-level accuracy |
-| **I Integration** | M phase A + V + C done | `pipeline.py` uses best extractor + categorizer; e2e benchmark incl. own photos; redeploy | Live site returns real extractions |
+| **I Integration** | M phase A + V + C done | `pipeline.py` uses best extractor + categorizer; e2e benchmark; redeploy | Live site returns real extractions |
 
 GPU rule: one transformer training job at a time (≤14–15 GB shared budget); Paddle OCR caching
 (~2 GB) can run alongside it.
