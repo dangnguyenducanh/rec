@@ -1,0 +1,47 @@
+{
+ "wildreceipt_train_gold": {
+  "merchant_kept": {
+   "restaurant_to_dining": 0.965,
+   "n_restaurant": 202,
+   "store_to_dining": 0.1,
+   "n_store": 20
+  },
+  "merchant_hidden": {
+   "restaurant_to_dining": 0.792,
+   "n_restaurant": 202,
+   "store_to_dining": 0.25,
+   "n_store": 20
+  },
+  "merchant_confident": 0.946
+ },
+ "wildreceipt_val_gold": {
+  "merchant_kept": {
+   "restaurant_to_dining": 1.0,
+   "n_restaurant": 19,
+   "store_to_dining": 0.2,
+   "n_store": 5
+  },
+  "merchant_hidden": {
+   "restaurant_to_dining": 0.895,
+   "n_restaurant": 19,
+   "store_to_dining": 0.0,
+   "n_store": 5
+  },
+  "merchant_confident": 0.923
+ },
+ "wildreceipt_val_layoutlmv3-B4": {
+  "merchant_kept": {
+   "restaurant_to_dining": 1.0,
+   "n_restaurant": 17,
+   "store_to_dining": 0.0,
+   "n_store": 5
+  },
+  "merchant_hidden": {
+   "restaurant_to_dining": 0.765,
+   "n_restaurant": 17,
+   "store_to_dining": 0.2,
+   "n_store": 5
+  },
+  "merchant_confident": 0.792
+ }
+}

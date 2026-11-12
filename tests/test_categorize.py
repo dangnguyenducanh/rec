@@ -43,3 +43,38 @@ def test_supermarket_items_are_never_dining(mode):
     # non-restaurant merchant rules dining out for its items.
     r = categorize.apply(Receipt(merchant="WHOLE FOODS MARKET", items=[Item(name="BANANAS", qty="1", price="1.98")]))
     assert r.items[0].category != "dining"
+
+
+def test_merchant_key():
+    assert categorize.merchant_key("Walmart #1234") == categorize.merchant_key("WAL MART") == "walmart"
+    assert categorize.merchant_key("DOLLARGENERALSTORE#04740") == "dollargeneral"
+    assert categorize.merchant_key("MR. D.I.Y. (M) SDN BHD") == "mrdiy"
+    assert categorize.merchant_key("The Home Depot") == "homedepot"
+
+
+def test_fast_food_without_merchant(mode):
+    # No merchant: the money-weighted item vote decides dining, and the items follow it.
+    r = categorize.apply(Receipt(merchant=None, items=[
+        Item(name="CHEESEBURGER", price="7.99"), Item(name="FRIES", price="3.49"), Item(name="COKE", price="2.00")]))
+    assert r.category == "dining"
+    assert {it.category for it in r.items} == {"dining"}
+
+
+@pytest.mark.parametrize("pm, want", [({}, "dining"), ({"groceries": 0.6, "dining": 0.1}, "groceries")])
+def test_unsure_merchant_settles_a_split(monkeypatch, tmp_path, pm, want):
+    # Keyword baseline items split evenly (dining, groceries); an unsure merchant leaning groceries decides.
+    monkeypatch.setattr(categorize, "MODEL_DIR", tmp_path)
+    categorize._load.cache_clear()
+    monkeypatch.setattr(categorize, "_merchant", lambda name: ("groceries", False, pm))
+    r = Receipt(merchant="CORNER 24", items=[Item(name="BURGER", price="5.00"), Item(name="BANANAS", price="5.00")])
+    assert categorize.apply(r).category == want
+    categorize._load.cache_clear()
+
+
+def test_general_store_receipt_goes_by_money(mode):
+    # A general store (Walmart) hands no category to its items; the receipt follows the money.
+    if mode == "models":
+        assert categorize.merchant_category("WALMART #1234") == ("general", True)
+    r = categorize.apply(Receipt(merchant="WALMART #1234", items=[
+        Item(name="BANANAS", price="1.98"), Item(name="PAPER TOWELS", price="12.99")]))
+    assert r.category == r.items[1].category != "dining"

@@ -1,59 +1,79 @@
 {
   "items": {
-    "n_train": 70267,
-    "n_val": 7775,
-    "n_test": 7632,
+    "n_train": 77114,
+    "n_val": 8590,
+    "n_test": 8431,
     "C": 4,
-    "val_macro_f1": 0.7185,
+    "val_macro_f1": 0.8834,
     "test_macro_f1": {
-      "keyword_clean": 0.4314,
-      "model_clean": 0.7322,
-      "keyword_receipt_style": 0.2289,
-      "model_receipt_style": 0.5688
+      "keyword_clean": 0.5127,
+      "model_clean": 0.8844,
+      "keyword_receipt_style": 0.2595,
+      "model_receipt_style": 0.7412
     },
     "test_per_class_f1_model_clean": {
-      "dining": 0.7166,
-      "drinks": 0.8625,
-      "groceries": 0.8901,
-      "health": 0.8829,
-      "household": 0.8666,
-      "other": 0.1746
+      "dining": 0.7554,
+      "drinks": 0.8896,
+      "groceries": 0.9275,
+      "health": 0.9392,
+      "household": 0.9102
     }
   },
   "merchants": {
-    "n_train": 16210,
-    "n_val": 1889,
-    "n_test": 1920,
-    "C": 16,
-    "val_macro_f1": 0.6121,
+    "n_train": 16185,
+    "n_val": 1888,
+    "n_test": 1924,
+    "C": 4,
+    "val_macro_f1": 0.6353,
     "test_macro_f1": {
-      "keyword_clean": 0.5081,
-      "model_clean": 0.6207,
-      "keyword_receipt_style": 0.2319,
-      "model_receipt_style": 0.5347
+      "keyword_clean": 0.5038,
+      "model_clean": 0.6395,
+      "keyword_receipt_style": 0.2281,
+      "model_receipt_style": 0.5696
     },
     "test_per_class_f1_model_clean": {
-      "clothing": 0.5043,
-      "dining": 0.8307,
-      "drinks": 0.65,
-      "electronics": 0.5946,
-      "groceries": 0.5889,
+      "clothing": 0.5145,
+      "dining": 0.8379,
+      "drinks": 0.6503,
+      "electronics": 0.5556,
+      "groceries": 0.6505,
       "health": 0.8462,
-      "household": 0.3846,
-      "services": 0.8732,
-      "transport_fuel": 0.3137
+      "household": 0.4167,
+      "services": 0.8678,
+      "transport_fuel": 0.4167
     },
     "theta": {
       "val": {
-        "coverage": 0.648,
-        "precision": 0.9003
+        "coverage": 0.6626,
+        "precision": 0.9081
       },
       "test": {
-        "coverage": 0.6281,
-        "precision": 0.8881
+        "coverage": 0.645,
+        "precision": 0.8977
       },
-      "value": 0.7499
+      "value": 0.6053,
+      "class": {
+        "clothing": 0.942,
+        "dining": 0.6053,
+        "electronics": 1.01,
+        "services": 0.6053,
+        "transport_fuel": 1.01
+      }
+    },
+    "with_train_lookup": {
+      "val": {
+        "hits": 29,
+        "macro_f1": 0.6349,
+        "coverage": 0.6679,
+        "precision": 0.9064
+      },
+      "test": {
+        "hits": 37,
+        "macro_f1": 0.6402,
+        "coverage": 0.6523,
+        "precision": 0.8924
+      }
     }
   },
-  "cord_test_dining_share": 0.8
+  "cord_test_dining_share": 0.9
 }

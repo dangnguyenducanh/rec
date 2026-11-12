@@ -128,9 +128,10 @@ Every training label comes from a public dataset that is already labelled; nobod
 
 | Labels for | Source (already labelled) | Mapping to our categories |
 |---|---|---|
-| Item names | **Instacart Online Grocery** `products.csv`: ~49.7k product names, each with an aisle and one of 21 departments | Department → category: produce, dairy eggs, bakery, meat seafood, deli, frozen, pantry, canned goods, dry goods pasta, breakfast, snacks, international, bulk → `groceries`; beverages, alcohol → `drinks`; household, pets, babies → `household`; personal care → `health`; missing, other → `other` |
+| Item names | **Instacart Online Grocery** `products.csv`: ~49.7k product names, each with an aisle and one of 21 departments | Department → category: produce, dairy eggs, bakery, meat seafood, deli, frozen, pantry, canned goods, dry goods pasta, breakfast, snacks, international, bulk → `groceries`; beverages, alcohol → `drinks`; household, pets, babies → `household`; personal care → `health`; missing, other → dropped (leftover bins of mixed goods) |
 | Item names (restaurant) | **CORD** `menu.nm` strings (every CORD receipt is a restaurant/café) | → `dining` |
-| Merchant names | **OpenStreetMap** POI names via Overpass, several US cities, by tag | `shop=supermarket/convenience/greengrocer` → groceries; `amenity=restaurant/fast_food/cafe` → dining; `amenity=bar/pub`, `shop=alcohol` → drinks; `shop=hardware/doityourself/houseware` → household; `amenity=pharmacy`, `shop=chemist` → health; `amenity=fuel` → transport_fuel; `shop=clothes/shoes` → clothing; `shop=electronics/mobile_phone` → electronics; `shop=hairdresser/laundry/dry_cleaning` → services (ODbL, attributed) |
+| Item names (US restaurants) | **Souslab** US restaurant menus, 10k-item sample (CC BY-NC 4.0), drink sections left out | → `dining` |
+| Merchant names | **OpenStreetMap** POI names via Overpass, several US cities, by tag | `shop=supermarket/convenience/greengrocer` → groceries; `amenity=restaurant/fast_food/cafe` → dining; `amenity=bar/pub`, `shop=alcohol` → drinks; `shop=hardware/doityourself/houseware` → household; `amenity=pharmacy`, `shop=chemist` → health; `amenity=fuel` → transport_fuel; `shop=clothes/shoes` → clothing; `shop=electronics/mobile_phone` → electronics; `shop=hairdresser/laundry/dry_cleaning` → services (ODbL, attributed); lookup-only: `shop=department_store/variety_store/general/wholesale` → `general`, books/stationery/gift/toys → other, and a few more |
 
 - **Receipt-style names:** product names are clean ("Organic Bananas") but receipts abbreviate
   ("ORG BNNA 2LB"), so training adds generated variants: uppercase, vowels dropped, words cut to
@@ -139,8 +140,13 @@ Every training label comes from a public dataset that is already labelled; nobod
   Instacart only covers groceries, drinks, household, health and other, so an item **inherits the
   merchant's category** when the merchant is confidently dining, fuel, clothing, electronics or
   services (a restaurant's items are dining); the item classifier runs for groceries and general stores.
-- **Receipt level:** merchant classifier if its probability ≥ θ, else the item category with the most
-  money on the receipt.
+- **Merchant:** an exact-name lookup over every labelled name first (`categorize.merchant_key`: no spaces,
+  store numbers or legal suffixes), then the classifier, confident at θ (val, 0.90 precision) or a stricter
+  per-category θ for categories that overwrite items. `general` stores (department/variety/wholesale) are
+  lookup-only and never hand their category to items.
+- **Receipt level:** a confident merchant's category; else the money-weighted mean of the item model's
+  probabilities, with 30% of the vote from an unsure merchant's probabilities. Items follow the receipt:
+  a dining (or other INHERIT) receipt's items take its category; any other known receipt rules dining out.
 - **Splits:** 70/15/15, grouped so a product or merchant name (normalized) never sits in two splits;
   chain names (e.g. every "Safeway") stay in one split.
 - **Scores (no hand-labeled set):** macro-F1 on held-out Instacart products, reported on clean

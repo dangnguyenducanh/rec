@@ -60,6 +60,7 @@ bash scripts/train_queue.sh   # the same, one GPU job at a time, logs in models/
 # 5. Categorizer: public labelled data (Instacart, CORD, OSM) -> data/categories/, then train -> models/categorizer/
 .venv/bin/python -s scripts/build_category_data.py
 .venv/bin/python -s scripts/train_categorizer.py                               # scores -> eval/categories.json
+.venv/bin/python -s scripts/eval_categorizer_receipts.py --extractor layoutlmv3-B4  # real receipts -> eval/categories_receipts.json
 
 # Stage 1-3 diagnostics -> eval/diagnostics/
 .venv/bin/python -s scripts/diagnostics.py blur        # also: warp, deskew, rows --ocr paddle, ocr --engine paddle
@@ -170,10 +171,10 @@ Known limits of B4: on SROIE receipts it under-tags SUBTOTAL (12 words on SROIE 
 0% GST "Total excl. GST" equals the total and the weak labels call it TOTAL; SROIE does not score subtotals.
 
 
-- **Categorizer** (`eval/categories.json`, no hand labels): items macro-F1 0.732 clean / 0.569 receipt-style
-  (keyword baseline 0.431 / 0.229); merchants 0.621 / 0.535 (keywords 0.508 / 0.232), θ = 0.75 covers 63% at
-  0.89 precision; 80% of CORD test receipts come out `dining`. Items on a confidently non-restaurant receipt are
-  never `dining`.
+- **Categorizer** (`eval/categories.json`, no hand labels; see Improving the categorizer): items macro-F1 0.884
+  clean / 0.741 receipt-style on test (5 classes; keyword baseline 0.513 / 0.260); merchants 0.640 / 0.570 (keywords
+  0.504 / 0.228), θ = 0.61 covers 65% of test merchants at 0.90 precision; 90% of CORD test receipts come out
+  `dining`.
 - **Blur gate** (`blur.json`): 0% false rejects on sharp SROIE and WildReceipt train, 0.6% at blur σ=1, 76% at σ=2, 100% from σ=3.
 - **Warp** (`warp.json`): a paper quad is found on 3 of 37 CORD test photos (IoU 0.92 when found); mean IoU 0.71 vs 0.68 without warping.
 - **Deskew** (`deskew.json`): median angle error 0.10°, p90 0.36° on 361 SROIE test scans rotated 1–15°.
@@ -200,3 +201,43 @@ Known limits of B4: on SROIE receipts it under-tags SUBTOTAL (12 words on SROIE 
   the one step with a clear OCR gain, on CORD's phone photos (CER 0.135 → 0.105). Deskew gives a small detection gain
   on WildReceipt (H-mean 0.844 → 0.851 with it). Steps 2–3 are neutral. The live default stays 2–5,
   because LayoutLMv3-B and B4 were trained on that OCR output and the steps cost about 0.05 s per photo.
+
+### Improving the categorizer
+
+A second multi-agent workflow (19 agents) went through the item and merchant models' val errors and the
+receipt-level rules on real WildReceipt / SROIE val receipts, searched for public labelled data, and tried 15 fixes,
+each in its own worktree. Seven are combined here; dropping the "other" class had failed its CORD guard on its own
+(0.80 → 0.77) and passes in the combination (0.90). With no hand labels anywhere, real-receipt quality is
+measured on WildReceipt receipts labelled by a fixed rule on the merchant name (an unambiguous brand from the
+name-suggestion-index, or a keyword: restaurant vs store), with the merchant name kept and hidden
+(`scripts/eval_categorizer_receipts.py` → `eval/categories_receipts.json`). The "kept" rows are optimistic, since the
+rule and the new merchant lookup share brand names; the "hidden" rows see only the items.
+
+- **Items:** the Instacart "missing" / "other" departments are dropped (leftover bins of mixed goods; the class
+  scored 0.15 F1 and pulled groceries into it); **Souslab** US restaurant menu items (10k sample, CC BY-NC 4.0,
+  drink sections left out) join CORD's Indonesian dishes as `dining`; a second TF-IDF block reads names with
+  spaces squashed out ("CDPORKCHOP" = "CD PORK CHOP"); trained unweighted (balanced, the dining class swallowed
+  store items).
+- **Merchants:** an exact-name lookup over every labelled merchant name runs first ("Walmart #1234", "WAL MART" →
+  `walmart`), with department / variety / wholesale stores as `general` (Walmart, Target, Costco, Dollar Tree: the
+  receipt then goes by its items, never `dining`); NSI brands outside the US and NSI aliases feed only the lookup;
+  per-category θ: clothing needs 0.94, and a classifier guess of electronics or fuel never overwrites the items.
+- **Receipt level:** with an unsure merchant, the category is the money-weighted mean of the items' probabilities,
+  with 30% of the vote from the merchant classifier; items then follow the receipt (a dining receipt's items are
+  dining; any other known receipt rules dining out for its items).
+
+| Rule-labelled WildReceipt receipts (train gold / val gold / val live extraction) | before | after |
+|---|---|---|
+| merchant confident | 0.70 / 0.65 / 0.50 | 0.95 / 0.92 / 0.79 |
+| restaurant → dining, merchant kept | 0.84 / 0.90 / 0.77 | 0.97 / 1.00 / 1.00 |
+| restaurant → dining, merchant hidden | 0.34 / 0.47 / 0.29 | 0.79 / 0.90 / 0.77 |
+| store → dining (wrong), merchant kept | 0.15 / 0.00 / 0.00 | 0.10 / 0.20 / 0.00 |
+| store → dining (wrong), merchant hidden | 0.05 / 0.00 / 0.00 | 0.25 / 0.00 / 0.20 |
+
+"Before" is the categorizer of commit 2eaba02, with LayoutLMv3-B reading the live column; "after" is this one, with
+B4. There are 202 / 19 / 17 restaurant receipts and 20 / 5 / 5 stores, so the store rows are a handful of receipts. Real
+WildReceipt + SROIE val merchant names that come out confident: 63 → 81 of 142. On the original val names the
+merchant model gains (0.612 → 0.635 clean, 0.553 → 0.568 receipt-style) and the item model stays level over its five
+classes (0.844 → 0.842: dining on CORD's names drops as English dishes join it, the other four rise). Tried and
+dropped: London / Kuala Lumpur shops (US val −0.02), Amazon product listings (no gain), a historical NYPL menu
+set (worse), a restaurant gate on the item vote (store false positives), a dining weight on the item vote (best at 1).
