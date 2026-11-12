@@ -250,8 +250,8 @@ GPU rule: one transformer training job at a time (≤14–15 GB shared budget); 
 
 ## 9. Open items
 - Cloudflare named tunnel (needs a domain) vs quick tunnel with redeploys.
-- Vercel + GitHub: `rec/` currently sits inside the home-directory git repo; it needs its own repo
-  for Vercel's GitHub integration (or deploy with the `vercel` CLI).
+- ~~Vercel + GitHub~~: resolved — code lives at github.com/dangnguyenducanh/rec (public); import it in
+  Vercel with root directory `frontend`.
 - Who runs the lanes: separate Claude sessions per lane, or one session + background jobs.
 
 ## 10. Calls made by the builder (check these)
