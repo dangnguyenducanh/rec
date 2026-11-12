@@ -164,7 +164,12 @@ def _items(seq: list[tuple[int, str, str]]) -> list[Item]:
             per_row.setdefault(r, ([], [], []))[slot[lab]].append(" ".join(t for *_, t in g))
     items, pending, pend_row, last_row, one_line = [], [], None, None, False
     orphan = None  # (row, qty, prices) of a name-less qty/price row with no name waiting above it
-    for r in sorted(per_row):
+    rows_ = sorted(per_row)
+    bare = lambda row: bool(row) and not row[0] and bool(row[1] or row[2])  # noqa: E731  (qty/price, no name)
+    # names printed under their qty/price rows, judged for the whole receipt: the item rows start on a bare
+    # qty/price row or end on a name-only one (else an orphan pairs down only when no bare row follows the name)
+    names_under = bool(rows_) and (bare(per_row[rows_[0]]) or not (per_row[rows_[-1]][1] or per_row[rows_[-1]][2]))
+    for r in rows_:
         names, qtys, prices = per_row[r]
         prices = [p for t in prices if (p := norm_money(t)) is not None]
         qty = next((q for t in qtys if (q := _qty(t))), None)
@@ -191,7 +196,7 @@ def _items(seq: list[tuple[int, str, str]]) -> list[Item]:
                                   unit_price=prices[0] if len(prices) > 1 else None))
                 last_row, one_line = r, not pending and bool(names)
             pending = []
-        elif names and orph and orph[2]:  # name printed under its qty/price row
+        elif names and orph and orph[2] and (names_under or not bare(per_row.get(r + 1))):  # name under its price row
             items.append(Item(name=" ".join(names), qty=orph[1], price=orph[2][-1]))
             last_row, one_line = r, True
         elif names:

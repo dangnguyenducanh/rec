@@ -77,6 +77,21 @@ def test_fuel_brand_is_fuel(mode):
         assert categorize.merchant_category("SHELL") == ("transport_fuel", True)
 
 
+def test_store_restaurant_is_not_the_store(mode):
+    # "IKEA Restaurant" POIs must not make IKEA a restaurant (it would turn every item into dining)
+    assert categorize.merchant_key("IKEA Restaurant") != categorize.merchant_key("IKEA")
+    if mode == "models":
+        assert categorize.merchant_category("IKEA")[0] != "dining"
+
+
+def test_general_store_with_only_dining_keywords(monkeypatch):
+    # keyword items + a general-store merchant: dining is ruled out and the vote must not come out empty
+    monkeypatch.setattr(categorize, "_load", lambda kind: None)
+    monkeypatch.setattr(categorize, "_merchant", lambda name: ("general", True, {}))
+    r = categorize.apply(Receipt(merchant="WALMART", items=[Item(name="CHEESEBURGER", price="5.00")]))
+    assert r.category != "dining" and r.items[0].category != "dining"
+
+
 def test_general_store_receipt_goes_by_money(mode):
     # A general store (Walmart) hands no category to its items; the receipt follows the money.
     if mode == "models":

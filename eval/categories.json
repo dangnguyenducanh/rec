@@ -62,13 +62,13 @@
     },
     "with_train_lookup": {
       "val": {
-        "hits": 30,
+        "hits": 28,
         "macro_f1": 0.6322,
         "coverage": 0.6684,
         "precision": 0.9057
       },
       "test": {
-        "hits": 48,
+        "hits": 47,
         "macro_f1": 0.649,
         "coverage": 0.6544,
         "precision": 0.8936

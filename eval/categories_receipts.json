@@ -1,7 +1,7 @@
 {
  "wildreceipt_train_gold": {
   "merchant_kept": {
-   "restaurant_to_dining": 0.965,
+   "restaurant_to_dining": 0.97,
    "n_restaurant": 202,
    "store_to_dining": 0.1,
    "n_store": 20

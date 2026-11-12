@@ -33,8 +33,10 @@ bench() {  # steps: crf benchmark on this Paddle ablation, once lane M's models/
 # a) Paddle, default preprocessing, the three test sets; then row grouping on Paddle words
 test_sets paddle 2,3,4,5
 $PY scripts/diagnostics.py rows --ocr paddle
-# b) Paddle on WildReceipt train/val (LayoutLMv3 phase B input)
+# b) Paddle on WildReceipt train/val (LayoutLMv3 phase B input), CORD train/val and SROIE train (phase B val for
+#    every run, and B4's extra training data; SROIE has no val split: build_ocr_cache.py skips it)
 cache paddle 2,3,4,5 wildreceipt train,val
+cache paddle 2,3,4,5 cord,sroie train,val
 # c) Tesseract baseline (step 6 = binarize) on the test sets
 test_sets tesseract 2,3,4,5,6
 # d) preprocessing ablation: no preprocessing, then each of steps 2-5 left out

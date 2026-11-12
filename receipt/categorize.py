@@ -65,7 +65,7 @@ def merchant_key(s: str) -> str:
     s = re.sub(r"\b([a-z])\.\s*(?=[a-z]\b)", r"\1", s)  # d. i. y. -> diy
     s = re.sub(r"[^a-z0-9]", "", LEGAL.sub(" ", " ".join(re.findall(r"[a-z0-9]+", s))))  # no spaces: gold text drops them
     s = re.sub(r"^(?:welcometo|the)(?=[a-z0-9]{3})", "", s)
-    return re.sub(r"(?<=[a-z0-9]{3})(?:stores?|restaurants?|shop)$", "", s)
+    return re.sub(r"(?<=[a-z0-9]{3})(?:stores?|shop)$", "", s)  # not "restaurant": "IKEA Restaurant" is not IKEA
 
 
 def _compile(table):
@@ -136,7 +136,7 @@ def _vote(names: list[str], prices: list[float], merchant_p: dict, dining: bool 
         vote = Counter(dict(zip(classes, m["model"].predict_proba(names).T @ w)))
     else:
         vote = Counter()
-        for c, x in zip(items_category(names), w):
+        for c, x in zip(items_category(names, frozenset() if dining else frozenset({"dining"})), w):
             vote[c] += x
     if merchant_p:
         vote = Counter({c: (1 - MERCHANT_SHARE) * vote[c] + MERCHANT_SHARE * merchant_p.get(c, 0.0)

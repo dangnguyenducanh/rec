@@ -115,3 +115,12 @@ def test_build_orphan_qty_price_rows():
     rec = build([_w(t, x, r) for t, x, r, _ in layout], [lab for *_, lab in layout])
     assert [(i.name, i.qty, i.price) for i in rec.items] == [
         ("TALAM", "3", "19500.00"), ("NASI", "1", "52000.00"), ("RICE", "2", "10.00")]
+
+
+def test_build_leading_orphan_does_not_shift_prices():
+    """Names above their qty/price rows: a header-like name over the first price row must not shift every price."""
+    layout = [("H3GOLDSTAR", 0, 0, "ITEM_NAME"), ("1x", 0, 1, "ITEM_QTY"), ("29.98", 400, 1, "ITEM_PRICE"),
+              ("BHUJA MIX", 0, 2, "ITEM_NAME"), ("1x", 0, 3, "ITEM_QTY"), ("10.99", 400, 3, "ITEM_PRICE"),
+              ("PORK RIBS", 0, 4, "ITEM_NAME"), ("1x", 0, 5, "ITEM_QTY"), ("19.31", 400, 5, "ITEM_PRICE")]
+    rec = build([_w(t, x, r) for t, x, r, _ in layout], [lab for *_, lab in layout])
+    assert [(i.name, i.price) for i in rec.items] == [("H3GOLDSTAR", "29.98"), ("BHUJA MIX", "10.99"), ("PORK RIBS", "19.31")]

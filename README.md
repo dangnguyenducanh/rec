@@ -41,7 +41,7 @@ Postgres: `docker compose -p rec up -d` (port 18332).
 # 2. OCR caches -> data/ocr_cache/{engine}-s{steps}/{dataset}/{split}.jsonl (re-execs in .venv-ocr for Paddle GPU)
 .venv/bin/python -s scripts/build_ocr_cache.py --engine paddle --steps 2,3,4,5 --datasets wildreceipt,sroie,cord --splits test
 .venv/bin/python -s scripts/build_ocr_cache.py --engine paddle --datasets wildreceipt --splits train,val   # LayoutLMv3 phase B input
-.venv/bin/python -s scripts/build_ocr_cache.py --engine paddle --datasets cord,sroie --splits train,val      # B4's extra training data
+.venv/bin/python -s scripts/build_ocr_cache.py --engine paddle --datasets cord,sroie --splits train,val      # phase B val (every run) + B4's data
 bash scripts/ocr_queue.sh     # the whole queue: test sets, train/val, Tesseract, preprocessing ablations
 
 # 3. Train extractors -> models/
@@ -100,24 +100,23 @@ runs live, PaddleOCR on the GPU after preprocessing steps 2–5.
 
 | extractor | ocr | WR field F1 | SROIE field F1 | CORD item F1 | WR item F1 | exact | p50 s |
 |---|---|---|---|---|---|---|---|
-| rules | gold | 0.765 | **0.630** | 0.543 | 0.562 | 0.507 | 0.001 |
-| crf | gold | 0.824 | 0.558 | 0.461 | 0.846 | 0.430 | 0.005 |
-| roberta-A | gold | 0.880 | 0.480 | 0.581 | 0.882 | 0.501 | 0.078 |
-| layoutlmv3-A | gold | **0.895** | 0.546 | 0.587 | **0.932** | **0.584** | 0.144 |
-| layoutlmv3-B | gold | 0.884 | 0.615 | 0.803 | 0.919 | 0.552 | 0.138 |
-| layoutlmv3-B3 | gold | 0.874 | 0.594 | **0.937** | 0.900 | 0.539 | 0.182 |
-| layoutlmv3-B4 | gold | 0.872 | 0.585 | 0.912 | 0.904 | 0.567 | 0.238 |
-| rules | paddle | 0.704 | 0.726 | 0.410 | 0.392 | 0.447 | 0.189 |
-| crf | paddle | 0.621 | 0.495 | 0.400 | 0.403 | 0.169 | 0.201 |
-| roberta-A | paddle | 0.701 | 0.535 | 0.477 | 0.476 | 0.309 | 0.275 |
-| layoutlmv3-A | paddle | 0.720 | 0.539 | 0.501 | 0.434 | 0.362 | 0.473 |
-| layoutlmv3-B | paddle | 0.786 | 0.650 | 0.653 | **0.657** | 0.439 | 0.295 |
-| layoutlmv3-B3 | paddle | 0.794 | 0.795 | **0.781** | 0.652 | 0.582 | 0.573 |
-| **layoutlmv3-B4** | paddle | **0.798** | **0.829** | 0.750 | 0.656 | **0.612** | 0.351 |
+| rules | gold | 0.765 | **0.629** | 0.543 | 0.562 | 0.507 | 0.001 |
+| crf | gold | 0.824 | 0.557 | 0.461 | 0.846 | 0.430 | 0.002 |
+| roberta-A | gold | 0.880 | 0.480 | 0.581 | 0.881 | 0.500 | 0.021 |
+| layoutlmv3-A | gold | **0.894** | 0.545 | 0.587 | **0.931** | **0.584** | 0.051 |
+| layoutlmv3-B | gold | 0.884 | 0.615 | 0.803 | 0.918 | 0.552 | 0.021 |
+| layoutlmv3-B3 | gold | 0.874 | 0.594 | **0.937** | 0.899 | 0.539 | 0.020 |
+| layoutlmv3-B4 | gold | 0.872 | 0.585 | 0.912 | 0.903 | 0.567 | 0.021 |
+| rules | paddle | 0.704 | 0.726 | 0.410 | 0.393 | 0.447 | 0.187 |
+| crf | paddle | 0.621 | 0.494 | 0.400 | 0.404 | 0.169 | 0.189 |
+| roberta-A | paddle | 0.701 | 0.535 | 0.477 | 0.477 | 0.309 | 0.206 |
+| layoutlmv3-A | paddle | 0.720 | 0.539 | 0.501 | 0.434 | 0.362 | 0.207 |
+| layoutlmv3-B | paddle | 0.785 | 0.650 | 0.653 | 0.657 | 0.439 | 0.204 |
+| layoutlmv3-B3 | paddle | 0.794 | 0.795 | **0.783** | 0.653 | 0.582 | 0.206 |
+| **layoutlmv3-B4** | paddle | **0.798** | **0.829** | 0.750 | **0.658** | **0.612** | 0.205 |
 
-Every row was re-run on 2026-11-13 with the current assembly code (`receipt/assemble.py`, `receipt/rows.py`). The
-p50 of the transformer rows is inflated: those runs shared the GPU with LayoutLMv3 training (the same LayoutLMv3-B row
-took 0.206 s on an idle card); the live API answers in 0.24 s with B4.
+Every row was re-run after the last change to the assembly code (`receipt/assemble.py`, `receipt/rows.py`), on an
+idle GPU: p50 is the cached Paddle OCR time plus the extractor, about 0.2 s for every learned model.
 
 What the table says:
 - On clean words, layout helps: LayoutLMv3 (text + boxes + image) beats RoBERTa (text) beats CRF beats rules on
@@ -125,17 +124,18 @@ What the table says:
 - Real OCR costs a lot: every learned model drops 0.15–0.5 F1 from gold to Paddle words (split, merged and misread
   tokens it never saw in training).
 - Training on real OCR output wins that back: LayoutLMv3-B (phase A weights fine-tuned on WildReceipt Paddle words,
-  labels projected from gold) gets WR field F1 0.786 vs 0.720 for phase A and item F1 0.657 vs 0.434.
+  labels projected from gold) gets WR field F1 0.785 vs 0.720 for phase A and item F1 0.657 vs 0.434.
 - More training data, with labels that are right, wins more: LayoutLMv3-B4 adds CORD and SROIE train (SROIE through
   weak labels, below). SROIE field F1 0.650 → 0.829 (rules, the best on SROIE until now, get 0.726), CORD item F1
-  0.653 → 0.750, exact 0.439 → 0.612, WR fields 0.786 → 0.798; WR items stay level (0.657 → 0.656).
+  0.653 → 0.750, exact 0.439 → 0.612, WR fields 0.785 → 0.798; WR items stay level (0.657 → 0.658).
 - SROIE is no longer out of domain for B3 and B4 (they train on SROIE train); for every other learned model it
   still is (they train on WildReceipt only).
-- B4 was picked over B3 on val (4-F1 mean 0.769 vs 0.756) before either was scored on test. Test agrees on the mean
-  (0.758 vs 0.756), but B3 is better on CORD items (0.781 vs 0.750) and B4 on SROIE (0.829 vs 0.795).
+- B4 was picked over B3 on val (4-F1 mean 0.771 vs 0.756) before either was scored on test. Test agrees on the mean
+  (0.759 vs 0.756), but B3 is better on CORD items (0.783 vs 0.750) and B4 on SROIE (0.829 vs 0.795).
 - Caveat: the item-assembly rule shared by all extractors was designed partly by looking at CORD **test**
-  mismatches, so the CORD item column is somewhat optimistic for every row alike. The 2026-11-13 assembly fixes
-  below were chosen on val only, and every test row went up with them.
+  mismatches, so the CORD item column is somewhat optimistic for every row alike. The assembly fixes
+  below were chosen on val only; with them, every test row's CORD item F1 and 4-F1 mean went up (a few single cells
+  moved by ≤ 0.005 either way).
 
 ### Improving phase B: B → B4
 
@@ -149,23 +149,26 @@ What the table says:
 3. **Error analysis with a multi-agent workflow** over B's val errors (every error put down to OCR, training labels,
    model, assembly or gold), a review of the training change, and each proposed fix implemented in its own git
    worktree and kept only if it moved the val mean by ≥ 0.003 without hurting rules or CRF. It found four bugs in
-   the first SROIE weak labels (the run trained on them, B2, scored 0.754 on val but found items on 1 of 63 SROIE
-   val receipts, against 59 for B): dates took the two words before them; every unannotated SROIE word (items,
+   the first SROIE weak labels (the run trained on them, B2, scores 0.772 on val, a hair above B4, yet finds items on
+   1 of 63 SROIE val receipts, against 59 for B: the metric cannot see it, so B2 was discarded): dates took the two words before them; every unannotated SROIE word (items,
    times, tax) was trained as O; SROIE gold-word copies carry text cut at the first comma; SUB-TOTAL and payment
    rows passed as TOTAL rows. In the fix, SROIE words are O in the header block (down to the last merchant/address
    row) and on the fields' own rows, times never, and every other SROIE word is left out of the loss.
 4. **Label projection**: a Paddle word whose centre sits in several loose gold boxes takes the one it overlaps best
    (IoU); one whose centre just misses a box (≤ 0.1 word height) still takes its label. Assembling the training
    labels themselves: WildReceipt train items 0.692 → 0.751, CORD train items 0.779 → 0.852.
-5. **Assembly**, for every extractor (old B on val 0.668 → 0.712 with no retraining; rules 0.550 → 0.558,
-   CRF 0.469 → 0.487): rows never stack two words that overlap in x, and judge overlap against the nearest member;
+5. **Assembly**, for every extractor (old B on val 0.668 → 0.712 with no retraining; rules 0.550 → 0.559,
+   CRF 0.469 → 0.488): rows never stack two words that overlap in x, and judge overlap against the nearest member;
    total = the last TOTAL run, skipping one equal to a TAX amount and preferring 2-decimal amounts; address = the
    first block only (no bill-to); qty "1.00" → "1" and a count written into the name ("(2x)", "2 @6.70") moves to
-   qty; a name-less qty/price row pairs with the item next to it; items with no price are dropped (modifier lines).
-6. **Runs** (val 4-F1 mean at the best epoch): B 0.712 · B2 0.754 (buggy SROIE labels, discarded) · B3 0.756 (fixed
-   labels, every other SROIE word ignored, which cost SROIE fields) · **B4 0.769** (B3 + SROIE header rows kept as
-   O, times never O). Runs with WildReceipt/CORD gold-word copies added (B2g, B3g) trailed at equal epochs and were
-   stopped. Each run takes 25–40 min on the GPU.
+   qty; a name-less qty/price row pairs with the item next to it (with the name under it only on receipts laid out
+   that way: the item rows start on a qty/price row or end on a name); items with no price are dropped.
+6. **Runs** (val 4-F1 mean at the best epoch, scored with the final assembly code): B 0.712 · B2 0.772 (buggy
+   SROIE labels, discarded, see 3) · B3 0.756 (fixed labels, every other SROIE word ignored, which cost SROIE fields)
+   · **B4 0.771** (B3 + SROIE header rows kept as O, times never O). Runs with WildReceipt/CORD gold-word copies
+   added were stopped early: B2g peaked at 0.746 at epoch 4 (scored with the earlier assembly, under which B2 reached 0.754),
+   B3g trailed B3 at both epochs it ran. Each
+   run takes 30–42 min on the GPU.
 
 Known limits of B4: on SROIE receipts it under-tags SUBTOTAL (12 words on SROIE val, against 61 for B), because with
 0% GST "Total excl. GST" equals the total and the weak labels call it TOTAL; SROIE does not score subtotals.
@@ -173,7 +176,8 @@ Known limits of B4: on SROIE receipts it under-tags SUBTOTAL (12 words on SROIE 
 
 - **Categorizer** (`eval/categories.json`, no hand labels; see Improving the categorizer): items macro-F1 0.884
   clean / 0.741 receipt-style on test (5 classes; keyword baseline 0.513 / 0.260); merchants 0.640 / 0.570 (keywords
-  0.504 / 0.228), θ = 0.61 covers 65% of test merchants at 0.90 precision; 90% of CORD test receipts come out
+  0.504 / 0.228), θ = 0.61 (0.94 for clothing; electronics and fuel
+  guesses never confident) covers 65% of test merchants at 0.90 precision; 90% of CORD test receipts come out
   `dining`.
 - **Blur gate** (`blur.json`): 0% false rejects on sharp SROIE and WildReceipt train, 0.6% at blur σ=1, 76% at σ=2, 100% from σ=3.
 - **Warp** (`warp.json`): a paper quad is found on 3 of 37 CORD test photos (IoU 0.92 when found); mean IoU 0.71 vs 0.68 without warping.
