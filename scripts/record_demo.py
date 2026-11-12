@@ -136,12 +136,12 @@ def main():
         fc.value.set_files(str(SAMPLE))
         h.pause(1.8)
 
-        h.caption("2 · Read it (demo build uses a stub extractor until the models are trained)")
+        h.caption("2 · Read it: OpenCV clean-up, Paddle OCR and a layout model, all on the GPU")
         h.click(page.get_by_role("button", name="Read receipt"))
         page.locator(".notice--ok").wait_for()
         h.pause(2.5)
 
-        h.caption("3 · Store, date, items and categories come back, with the photo beside them")
+        h.caption("3 · Store, date, totals and every item come back categorized, beside the photo")
         h.move_to(page.get_by_label("Merchant"))
         h.pause(0.8)
         h.scroll(420)

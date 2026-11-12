@@ -36,3 +36,10 @@ def test_restaurant(mode):
     r = categorize.apply(RESTAURANT)
     assert r.category == "dining"
     assert {it.category for it in r.items} == {"dining"}  # items inherit a confident dining merchant
+
+
+def test_supermarket_items_are_never_dining(mode):
+    # A bare dish-like name ("BANANAS") reads as a menu item to the item model; a confident
+    # non-restaurant merchant rules dining out for its items.
+    r = categorize.apply(Receipt(merchant="WHOLE FOODS MARKET", items=[Item(name="BANANAS", qty="1", price="1.98")]))
+    assert r.items[0].category != "dining"

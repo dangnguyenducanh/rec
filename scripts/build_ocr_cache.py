@@ -124,6 +124,14 @@ def main():
                 print(f"wrote {out}", flush=True)
                 if errs:
                     _retry_errors(pool, out, jobs)
+        _shutdown(pool)
+
+
+def _shutdown(pool) -> None:
+    """End the workers the gentle way. Leaving the `with` block calls Pool.terminate(), whose SIGTERM lands
+    in Paddle's own fatal-signal handler, which can hang a worker forever (a finished run that never exits)."""
+    pool.close()
+    pool.join()
 
 
 def _retry_errors(pool, out: Path, jobs, rounds: int = 3) -> int:
@@ -158,6 +166,7 @@ def repair(engine: str, steps, datasets: str, splits: str, workers: int, threads
                 if out.exists() and gold.exists():
                     jobs = [(r["id"], r["image"]) for r in map(json.loads, gold.open())]
                     print(f"{ds}/{split}: {_retry_errors(pool, out, jobs)} failed records left", flush=True)
+        _shutdown(pool)
 
 
 if __name__ == "__main__":

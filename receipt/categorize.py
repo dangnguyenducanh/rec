@@ -69,11 +69,17 @@ def _load(kind: str):
     return joblib.load(p)
 
 
-def items_category(names: list[str]) -> list[str]:
+def items_category(names: list[str], exclude: frozenset = frozenset()) -> list[str]:
+    """Category per item name; `exclude` drops categories the receipt rules out (the best remaining wins)."""
     m = _load("items")
+    if m and names:
+        classes = [str(c) for c in m["model"].classes_]
+        keep = [i for i, c in enumerate(classes) if c not in exclude] or list(range(len(classes)))
+        return [classes[max(keep, key=lambda i: p[i])] for p in m["model"].predict_proba(names)]
     if m:
-        return [str(c) for c in m["model"].predict(names)] if names else []
-    return [keyword(n, _ITEM_RE, "groceries")[0] for n in names]
+        return []
+    cats = [keyword(n, _ITEM_RE, "groceries")[0] for n in names]
+    return ["groceries" if c in exclude else c for c in cats]
 
 
 def merchant_category(name: str) -> tuple[str, bool]:
@@ -93,7 +99,10 @@ def apply(r: Receipt) -> Receipt:
     if sure and m_cat in INHERIT:
         cats = [m_cat] * len(r.items)
     else:
-        cats = items_category([it.name for it in r.items])
+        # Dining items come from restaurants: a confident non-restaurant merchant (a supermarket) rules
+        # it out, where the item model alone reads a bare "BANANAS" as a CORD menu dish.
+        exclude = frozenset({"dining"}) if sure else frozenset()
+        cats = items_category([it.name for it in r.items], exclude)
     for it, c in zip(r.items, cats):
         it.category = c
     if sure:

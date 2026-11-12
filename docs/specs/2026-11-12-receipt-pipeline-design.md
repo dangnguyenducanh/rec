@@ -277,3 +277,7 @@ GPU rule: one transformer training job at a time (≤14–15 GB shared budget); 
 - WildReceipt gold items rebuilt from gold boxes + row grouping (it has no item groups).
 - Ports 18300 / 18332.
 - Frontend types hand-mirrored from `schema.py` (no codegen).
+- The live API's extractor is the available model with the best mean of the four F1 columns (fields and items) on
+  Paddle OCR, not field F1 alone: on fields alone rules edge out LayoutLMv3-B (0.707 vs 0.698) while finding about half
+  its items. Field F1 stays the benchmark's headline metric.
+- A confidently identified non-restaurant merchant rules out `dining` for its items.

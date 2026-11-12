@@ -38,10 +38,14 @@ def _available(name: str) -> bool:
     return name == "rules" or (ROOT / "models" / ("crf.pkl" if name == "crf" else f"{name}/config.json")).exists()
 
 
+F1_COLUMNS = ("wr_field_f1", "sroie_field_f1", "cord_item_f1", "wr_item_f1")
+
+
 def choose() -> str:
-    """Available extractor with the best mean(WR field F1, SROIE field F1) in eval/results.csv. An
-    extractor is scored on its Paddle row at the default steps (what runs live) when it has one, else
-    on its gold-OCR row."""
+    """Available extractor with the best mean of the four F1 columns in eval/results.csv: header fields
+    and line items both, since items drive the spending categories (on Paddle OCR, rules edge out
+    LayoutLMv3-B on fields alone, 0.707 vs 0.698, while finding about half its items). An extractor is
+    scored on its Paddle row at the default steps (what runs live) when it has one, else its gold row."""
     # ponytail: a gold-only score beside a paddle score favours the gold-only extractor; fair once every
     # candidate has a paddle-s2345 row.
     score = {}  # name -> (has paddle row, mean F1, ocr)
@@ -52,11 +56,11 @@ def choose() -> str:
                 continue
             if not (src == "gold" or (src == "paddle" and r["steps"] == STEPS)):
                 continue
-            s = (src == "paddle", (float(r["wr_field_f1"]) + float(r["sroie_field_f1"])) / 2, src)
+            s = (src == "paddle", sum(float(r[c]) for c in F1_COLUMNS) / len(F1_COLUMNS), src)
             if name not in score or s[0] >= score[name][0]:
                 score[name] = s
     best = max(score, key=lambda n: score[n][1], default="rules")
-    log.info("extractor %s; mean field F1: %s", best,
+    log.info("extractor %s; mean F1 (fields + items): %s", best,
              ", ".join(f"{n} {m:.3f} ({src})" for n, (_, m, src) in sorted(score.items(), key=lambda x: -x[1][1])))
     return best
 

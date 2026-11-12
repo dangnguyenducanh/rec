@@ -14,9 +14,10 @@ checks catch → saved list → spending by category.
 |---|---|
 | ![Editor](docs/demo/editor.png) | ![Spending](docs/demo/spending.png) |
 
-> The video was recorded with the stub pipeline. The API now runs the real pipeline
-> (`receipt/pipeline.py`: quality gate → preprocess → Paddle OCR → extractor → assemble → categorize → checks);
-> `RECEIPT_PIPELINE=stub` still returns the fixed demo receipt.
+Recorded against the real pipeline on the GPU (`receipt/pipeline.py`: quality gate → preprocess → Paddle OCR →
+LayoutLMv3-B → assemble → categorize → checks), about 0.25–0.3 s per photo. The receipt in the video is a
+synthetic photo (`docs/demo/sample-receipt.jpg`), so it shows the product, not the accuracy: the numbers are under
+Results.
 
 ## Environments
 
@@ -71,14 +72,15 @@ cd frontend && npm install && npm run dev                            # UI on :18
 
 `scripts/serve.sh` runs uvicorn from `.venv-ocr` (default `CORS_ORIGINS=http://localhost:18373`). At startup the API
 loads Paddle OCR and the extractor on the GPU and warms them, so the first upload is fast. The extractor is chosen
-from `eval/results.csv`: among extractors whose model exists, the best mean of WildReceipt and SROIE field F1
-(Paddle-OCR rows preferred over gold-OCR rows); `GET /health` reports it and each saved receipt records it.
+from `eval/results.csv`: among extractors whose model exists, the best mean of the four F1 columns (header fields
+and line items, since items drive the categories), Paddle-OCR rows preferred over gold-OCR rows. Today that is
+**LayoutLMv3-B**; `GET /health` reports it and each saved receipt records it.
 `RECEIPT_EXTRACTOR=<name>` forces one; `RECEIPT_PIPELINE=stub` returns the fixed demo receipt.
 A blurry or glary photo gets HTTP 422 with a "retake it" message. The raw OCR (words, boxes, matrix `M`, timings)
 is stored in `receipts.raw_ocr`.
 
-Measured on the synthetic `docs/demo/sample-receipt.jpg` (shared GPU, warm): Paddle OCR 0.13–0.20 s,
-extractor 0.001 s (rules) / 0.03 s (roberta-A), whole request 0.3 s.
+Measured on the synthetic `docs/demo/sample-receipt.jpg` (shared GPU, warm): Paddle OCR 0.16–0.19 s,
+LayoutLMv3-B 0.02–0.04 s, whole request 0.25–0.31 s.
 
 Tests: `.venv-ocr/bin/python -s -m pytest -q` (uses a throwaway `rec_test` database; `tests/test_pipeline.py` runs the
 real pipeline on the GPU). Re-record the demo (empty DB, both servers up):
@@ -86,22 +88,45 @@ real pipeline on the GPU). Re-record the demo (empty DB, both servers up):
 
 ## Results
 
-`eval/results.csv` — same scorer, same frozen test sets for every row (field F1 = micro F1 over header fields;
-exact = merchant + date + total all right; `p50_s` = median OCR + extractor seconds per receipt).
-LayoutLMv3 A/B and Paddle-OCR rows are added when training and the OCR queue finish.
+`eval/results.csv`: same scorer, same frozen test sets for every row. Field F1 = micro F1 over the header fields a
+dataset labels; item F1 = name, qty and price all right; exact = merchant + date + total all right; `p50_s` = median
+OCR + extractor seconds per receipt. **gold** = the datasets' own words and boxes (upper bound); **paddle** = what
+runs live, PaddleOCR on the GPU after preprocessing steps 2–5.
 
-| extractor | ocr | steps | WR field F1 | SROIE field F1 | CORD item F1 | WR item F1 | exact | p50 s |
-|---|---|---|---|---|---|---|---|---|
-| crf | gold | none | 0.8226 | 0.5435 | 0.4372 | 0.8379 | 0.4234 | 0.001 |
-| rules | gold | none | 0.761 | 0.6295 | 0.5349 | 0.5398 | 0.5038 | 0.0003 |
-| roberta-A | gold | none | 0.8765 | 0.4718 | 0.5309 | 0.8735 | 0.4941 | 0.0238 |
+| extractor | ocr | WR field F1 | SROIE field F1 | CORD item F1 | WR item F1 | exact | p50 s |
+|---|---|---|---|---|---|---|---|
+| rules | gold | 0.761 | 0.630 | 0.535 | 0.540 | 0.504 | 0.000 |
+| crf | gold | 0.823 | 0.544 | 0.437 | 0.838 | 0.423 | 0.001 |
+| roberta-A | gold | 0.877 | 0.472 | 0.531 | 0.874 | 0.494 | 0.024 |
+| layoutlmv3-A | gold | **0.892** | 0.535 | 0.548 | **0.933** | **0.579** | 0.024 |
+| layoutlmv3-B | gold | 0.882 | 0.609 | **0.725** | 0.923 | 0.546 | 0.029 |
+| rules | paddle | 0.689 | **0.725** | 0.397 | 0.373 | **0.431** | 0.185 |
+| crf | paddle | 0.616 | 0.477 | 0.370 | 0.375 | 0.168 | 0.186 |
+| roberta-A | paddle | 0.690 | 0.528 | 0.442 | 0.449 | 0.294 | 0.195 |
+| layoutlmv3-A | paddle | 0.708 | 0.505 | 0.482 | 0.418 | 0.337 | 0.211 |
+| **layoutlmv3-B** | paddle | **0.776** | 0.619 | **0.607** | **0.634** | 0.414 | 0.206 |
+
+What the table says:
+- On clean words, layout helps: LayoutLMv3 (text + boxes + image) beats RoBERTa (text) beats CRF beats rules on
+  WildReceipt fields and items.
+- Real OCR costs a lot: every learned model drops 0.15–0.5 F1 from gold to Paddle words (split, merged and misread
+  tokens it never saw in training).
+- Training on real OCR output wins that back: LayoutLMv3-B (phase A weights fine-tuned on Paddle words, labels
+  projected from gold) is the best live extractor, with WR field F1 0.776 vs 0.708 for phase A and item F1 0.634 vs 0.418.
+- SROIE is out of domain for every learned model (they train on WildReceipt only); there the regex + anchor rules
+  stay best (0.725 on Paddle words).
+- Caveat: the item-assembly rule shared by all extractors was designed partly by looking at CORD **test**
+  mismatches, so the CORD item column is somewhat optimistic for every row alike.
 
 - **Categorizer** (`eval/categories.json`, no hand labels): items macro-F1 0.732 clean / 0.569 receipt-style
   (keyword baseline 0.431 / 0.229); merchants 0.621 / 0.535 (keywords 0.508 / 0.232), θ = 0.75 covers 63% at
-  0.89 precision; 80% of CORD test receipts come out `dining`.
+  0.89 precision; 80% of CORD test receipts come out `dining`. Items on a confidently non-restaurant receipt are
+  never `dining`.
 - **Blur gate** (`blur.json`): 0% false rejects on sharp SROIE and WildReceipt train, 0.6% at blur σ=1, 76% at σ=2, 100% from σ=3.
 - **Warp** (`warp.json`): a paper quad is found on 3 of 37 CORD test photos (IoU 0.92 when found); mean IoU 0.71 vs 0.68 without warping.
 - **Deskew** (`deskew.json`): median angle error 0.10°, p90 0.36° on 361 SROIE test scans rotated 1–15°.
 - **Row grouping** (`rows.json`): τ = 0.45; same-row pair F1 0.982 on CORD test gold boxes, 0.980 on Paddle boxes.
-- **OCR** (`ocr.csv`, Paddle, steps 2–5): detection H-mean 0.851 / 0.906 / 0.897 and CER 0.139 / 0.132 / 0.105 on
-  WildReceipt / SROIE / CORD test, p50 0.12–0.30 s per photo.
+- **OCR** (`ocr.csv`, steps 2–5): Paddle detection H-mean 0.851 / 0.927 / 0.897 and CER 0.139 / 0.094 / 0.105 on
+  WildReceipt / SROIE / CORD test, p50 0.12–0.31 s per photo on the GPU; Tesseract 0.599 / 0.718 / 0.414 H-mean.
+- **Preprocessing ablation:** CRF on Paddle OCR with each step switched off (`--steps none, 345, 245, 235, 234`)
+  appends rows to `eval/results.csv` as the OCR queue finishes them.
