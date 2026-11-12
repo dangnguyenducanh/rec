@@ -1,0 +1,272 @@
+{
+ "n_with_roi": 37,
+ "quad_found": 3,
+ "roi_inside_frame": 18,
+ "quad_found_when_roi_inside": 3,
+ "iou_mean_found": 0.9167,
+ "iou_median_found": 0.9156,
+ "share_found_iou_ge_0.85": 1.0,
+ "iou_mean_all": 0.7083,
+ "iou_mean_no_warp": 0.6765,
+ "per_image": [
+  {
+   "id": "cord/test/0000",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.6512,
+   "iou_full_image": 0.6512
+  },
+  {
+   "id": "cord/test/0001",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.6716,
+   "iou_full_image": 0.6716
+  },
+  {
+   "id": "cord/test/0004",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.7374,
+   "iou_full_image": 0.7374
+  },
+  {
+   "id": "cord/test/0013",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.6182,
+   "iou_full_image": 0.6182
+  },
+  {
+   "id": "cord/test/0017",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.2719,
+   "iou_full_image": 0.2719
+  },
+  {
+   "id": "cord/test/0019",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.9605,
+   "iou_full_image": 0.9605
+  },
+  {
+   "id": "cord/test/0021",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.5267,
+   "iou_full_image": 0.5267
+  },
+  {
+   "id": "cord/test/0026",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.786,
+   "iou_full_image": 0.786
+  },
+  {
+   "id": "cord/test/0027",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.7163,
+   "iou_full_image": 0.7163
+  },
+  {
+   "id": "cord/test/0031",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.5268,
+   "iou_full_image": 0.5268
+  },
+  {
+   "id": "cord/test/0034",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.9177,
+   "iou_full_image": 0.9177
+  },
+  {
+   "id": "cord/test/0037",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.8517,
+   "iou_full_image": 0.8517
+  },
+  {
+   "id": "cord/test/0038",
+   "found": true,
+   "roi_inside_frame": true,
+   "iou": 0.9083,
+   "iou_full_image": 0.5177
+  },
+  {
+   "id": "cord/test/0039",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.7861,
+   "iou_full_image": 0.7861
+  },
+  {
+   "id": "cord/test/0040",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.9918,
+   "iou_full_image": 0.9918
+  },
+  {
+   "id": "cord/test/0041",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.6355,
+   "iou_full_image": 0.6355
+  },
+  {
+   "id": "cord/test/0043",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.3788,
+   "iou_full_image": 0.3788
+  },
+  {
+   "id": "cord/test/0044",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.7281,
+   "iou_full_image": 0.7281
+  },
+  {
+   "id": "cord/test/0051",
+   "found": true,
+   "roi_inside_frame": true,
+   "iou": 0.9261,
+   "iou_full_image": 0.5719
+  },
+  {
+   "id": "cord/test/0059",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.7504,
+   "iou_full_image": 0.7504
+  },
+  {
+   "id": "cord/test/0060",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.6349,
+   "iou_full_image": 0.6349
+  },
+  {
+   "id": "cord/test/0061",
+   "found": true,
+   "roi_inside_frame": true,
+   "iou": 0.9156,
+   "iou_full_image": 0.4842
+  },
+  {
+   "id": "cord/test/0065",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.5401,
+   "iou_full_image": 0.5401
+  },
+  {
+   "id": "cord/test/0067",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.5216,
+   "iou_full_image": 0.5216
+  },
+  {
+   "id": "cord/test/0069",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.4223,
+   "iou_full_image": 0.4223
+  },
+  {
+   "id": "cord/test/0070",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.5084,
+   "iou_full_image": 0.5084
+  },
+  {
+   "id": "cord/test/0075",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.9961,
+   "iou_full_image": 0.9961
+  },
+  {
+   "id": "cord/test/0079",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.9166,
+   "iou_full_image": 0.9166
+  },
+  {
+   "id": "cord/test/0080",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.6686,
+   "iou_full_image": 0.6686
+  },
+  {
+   "id": "cord/test/0084",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.4271,
+   "iou_full_image": 0.4271
+  },
+  {
+   "id": "cord/test/0085",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.5631,
+   "iou_full_image": 0.5631
+  },
+  {
+   "id": "cord/test/0090",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.6084,
+   "iou_full_image": 0.6084
+  },
+  {
+   "id": "cord/test/0091",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.9817,
+   "iou_full_image": 0.9817
+  },
+  {
+   "id": "cord/test/0094",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.8326,
+   "iou_full_image": 0.8326
+  },
+  {
+   "id": "cord/test/0095",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.8977,
+   "iou_full_image": 0.8977
+  },
+  {
+   "id": "cord/test/0097",
+   "found": false,
+   "roi_inside_frame": false,
+   "iou": 0.982,
+   "iou_full_image": 0.982
+  },
+  {
+   "id": "cord/test/0098",
+   "found": false,
+   "roi_inside_frame": true,
+   "iou": 0.4501,
+   "iou_full_image": 0.4501
+  }
+ ]
+}

@@ -19,11 +19,11 @@ def init():
         c.execute((Path(__file__).parent / "schema.sql").read_text())
 
 
-def insert(extractor: str, image_path: str, data: dict) -> dict:
+def insert(extractor: str, image_path: str, data: dict, raw_ocr: dict) -> dict:
     with connect() as c:
         return c.execute(
-            f"INSERT INTO receipts (extractor, image_path, data) VALUES (%s, %s, %s) RETURNING {COLS}",
-            (extractor, image_path, Jsonb(data)),
+            f"INSERT INTO receipts (extractor, image_path, data, raw_ocr) VALUES (%s, %s, %s, %s) RETURNING {COLS}",
+            (extractor, image_path, Jsonb(data), Jsonb(raw_ocr)),
         ).fetchone()
 
 

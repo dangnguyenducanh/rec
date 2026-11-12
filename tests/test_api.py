@@ -16,6 +16,7 @@ def client(tmp_path_factory):
         c.execute("CREATE DATABASE rec_test")
     os.environ["DATABASE_URL"] = "postgresql://rec:rec@localhost:18332/rec_test"
     os.environ["UPLOAD_DIR"] = str(tmp_path_factory.mktemp("uploads"))
+    os.environ["RECEIPT_PIPELINE"] = "stub"
     from fastapi.testclient import TestClient
 
     from api.main import app
@@ -54,3 +55,14 @@ def test_rejects_non_image(client):
 
 def test_missing_receipt_is_404(client):
     assert client.get("/receipts/999999").status_code == 404
+
+
+def test_rejected_photo_is_422(client, monkeypatch):
+    from receipt import pipeline
+
+    def blurry(_data):
+        raise pipeline.Rejected("The photo is too blurry to read.")
+    monkeypatch.setattr(pipeline, "extract", blurry)
+    r = client.post("/receipts", files={"file": ("r.png", png(), "image/png")})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "The photo is too blurry to read."

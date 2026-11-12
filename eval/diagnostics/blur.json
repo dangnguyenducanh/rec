@@ -1,0 +1,29 @@
+{
+ "blur_min": 18.1,
+ "feasible": true,
+ "max_score_sigma_ge5": 2.06,
+ "q04_sharp": 159.16,
+ "n_sroie_train": 626,
+ "n_wildreceipt_train": 1141,
+ "reject_rate_sroie_by_sigma": {
+  "0": 0.0,
+  "1": 0.0064,
+  "2": 0.7556,
+  "3": 1.0,
+  "5": 1.0,
+  "8": 1.0
+ },
+ "reject_rate_wildreceipt_train": 0.0,
+ "median_score_sroie_by_sigma": {
+  "0": 1670.6,
+  "1": 136.9,
+  "2": 10.9,
+  "3": 2.7,
+  "5": 1.3,
+  "8": 1.2
+ },
+ "median_score_wildreceipt_train": 1347.9,
+ "glare_max": 0.99,
+ "glare_reject_rate_sroie_sigma0": 0.0,
+ "glare_reject_rate_wildreceipt_train": 0.0
+}

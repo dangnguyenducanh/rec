@@ -1,0 +1,17 @@
+{
+ "n_images": 361,
+ "n_trials": 5054,
+ "median_abs_err_deg": 0.099,
+ "p90_abs_err_deg": 0.358,
+ "median_abs_err_vs_applied_only_deg": 0.247,
+ "share_not_rotated": 0.0192,
+ "median_abs_err_by_angle": {
+  "1": 0.091,
+  "2": 0.091,
+  "3": 0.099,
+  "5": 0.096,
+  "8": 0.104,
+  "12": 0.109,
+  "15": 0.109
+ }
+}

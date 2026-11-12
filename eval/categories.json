@@ -1,0 +1,59 @@
+{
+  "items": {
+    "n_train": 70267,
+    "n_val": 7775,
+    "n_test": 7632,
+    "C": 4,
+    "val_macro_f1": 0.7185,
+    "test_macro_f1": {
+      "keyword_clean": 0.4314,
+      "model_clean": 0.7322,
+      "keyword_receipt_style": 0.2289,
+      "model_receipt_style": 0.5688
+    },
+    "test_per_class_f1_model_clean": {
+      "dining": 0.7166,
+      "drinks": 0.8625,
+      "groceries": 0.8901,
+      "health": 0.8829,
+      "household": 0.8666,
+      "other": 0.1746
+    }
+  },
+  "merchants": {
+    "n_train": 16210,
+    "n_val": 1889,
+    "n_test": 1920,
+    "C": 16,
+    "val_macro_f1": 0.6121,
+    "test_macro_f1": {
+      "keyword_clean": 0.5081,
+      "model_clean": 0.6207,
+      "keyword_receipt_style": 0.2319,
+      "model_receipt_style": 0.5347
+    },
+    "test_per_class_f1_model_clean": {
+      "clothing": 0.5043,
+      "dining": 0.8307,
+      "drinks": 0.65,
+      "electronics": 0.5946,
+      "groceries": 0.5889,
+      "health": 0.8462,
+      "household": 0.3846,
+      "services": 0.8732,
+      "transport_fuel": 0.3137
+    },
+    "theta": {
+      "val": {
+        "coverage": 0.648,
+        "precision": 0.9003
+      },
+      "test": {
+        "coverage": 0.6281,
+        "precision": 0.8881
+      },
+      "value": 0.7499
+    }
+  },
+  "cord_test_dining_share": 0.8
+}

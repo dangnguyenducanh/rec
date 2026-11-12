@@ -1,6 +1,7 @@
 """FastAPI app: /receipts (POST/GET/PATCH), /stats, /health (spec §4 stage 7)."""
 import datetime as dt
 import io
+import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -20,6 +21,7 @@ from receipt.validate import check
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", Path(__file__).resolve().parents[1] / "data" / "uploads"))
 MAX_BYTES = 10 * 1024 * 1024
 FORMATS = {"jpeg", "png", "webp"}
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
 
 class Stored(BaseModel):
@@ -61,6 +63,7 @@ def _row(rid: int) -> dict:
 async def lifespan(_app):
     db.init()
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    pipeline.load()  # warm OCR + extractor so the first upload is fast
     yield
 
 
@@ -91,10 +94,13 @@ def create_receipt(file: UploadFile):
         raise HTTPException(400, "That file isn't an image we can read")
     if fmt not in FORMATS:
         raise HTTPException(400, "Use a JPG, PNG or WebP photo")
+    try:
+        receipt, raw_ocr = pipeline.extract(data)
+    except pipeline.Rejected as e:
+        raise HTTPException(422, str(e))
     name = f"{uuid.uuid4().hex}.{fmt}"
     (UPLOAD_DIR / name).write_bytes(data)
-    receipt = check(pipeline.extract(data))
-    return _out(db.insert(pipeline.EXTRACTOR, name, receipt.model_dump(mode="json")))
+    return _out(db.insert(pipeline.EXTRACTOR, name, receipt.model_dump(mode="json"), raw_ocr))
 
 
 @app.get("/receipts", response_model=list[Stored])

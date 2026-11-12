@@ -6,3 +6,7 @@ node_modules/
 frontend/dist/
 .env
 .claude/
+.tools/
+.venv-ocr/
+eval/runs/
+eval/figures/gold_wildreceipt.png

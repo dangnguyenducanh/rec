@@ -1,1 +1,4 @@
 extractor,ocr,steps,wr_field_f1,sroie_field_f1,cord_item_f1,wr_item_f1,exact,p50_s
+crf,gold,none,0.8226,0.5435,0.4372,0.8379,0.4234,0.001
+rules,gold,none,0.761,0.6295,0.5349,0.5398,0.5038,0.0003
+roberta-A,gold,none,0.8765,0.4718,0.5309,0.8735,0.4941,0.0238
