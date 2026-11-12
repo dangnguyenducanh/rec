@@ -128,5 +128,19 @@ What the table says:
 - **Row grouping** (`rows.json`): τ = 0.45; same-row pair F1 0.982 on CORD test gold boxes, 0.980 on Paddle boxes.
 - **OCR** (`ocr.csv`, steps 2–5): Paddle detection H-mean 0.851 / 0.927 / 0.897 and CER 0.139 / 0.094 / 0.105 on
   WildReceipt / SROIE / CORD test, p50 0.12–0.31 s per photo on the GPU; Tesseract 0.599 / 0.718 / 0.414 H-mean.
-- **Preprocessing ablation:** CRF on Paddle OCR with each step switched off (`--steps none, 345, 245, 235, 234`)
-  appends rows to `eval/results.csv` as the OCR queue finishes them.
+- **Preprocessing ablation** (Paddle OCR on the three test sets with one step switched off; CER from `ocr.csv`,
+  downstream field/item F1 from the CRF rows in `results.csv`):
+
+  | steps | removed | CER WR / SROIE / CORD | CRF WR field F1 | CRF CORD item F1 | p50 s |
+  |---|---|---|---|---|---|
+  | 2345 (default) | — | 0.139 / 0.094 / 0.105 | 0.616 | 0.370 | 0.186 |
+  | 345 | 2 rescale | 0.141 / 0.095 / 0.102 | 0.615 | 0.363 | 0.137 |
+  | 245 | 3 warp | 0.139 / 0.094 / 0.103 | 0.615 | 0.370 | 0.134 |
+  | 235 | 4 deskew | 0.139 / 0.094 / 0.103 | 0.617 | 0.376 | 0.130 |
+  | 234 | 5 shadow removal | 0.140 / 0.094 / 0.128 | 0.621 | 0.388 | 0.135 |
+  | none | all | 0.139 / 0.095 / 0.135 | 0.621 | 0.382 | 0.131 |
+
+  PaddleOCR is robust on its own: no step moves the downstream F1 by more than about 0.02. Shadow removal (step 5) is
+  the one step with a clear OCR gain, on CORD's phone photos (CER 0.135 → 0.105). Deskew gives a small detection gain
+  on WildReceipt (H-mean 0.844 → 0.851 with it). Steps 2–3 are neutral. The live default stays 2–5,
+  because LayoutLMv3-B was trained on that OCR output and the steps cost about 0.05 s per photo.
