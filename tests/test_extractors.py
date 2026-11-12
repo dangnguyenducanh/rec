@@ -57,3 +57,8 @@ def test_project_labels_by_word_centre():
     gold = [dict(W("TOTAL", 50, 340, 100), label="O"), dict(W("5.87", 400, 340, 100), label="TOTAL")]
     ocr = [W("TOT", 60, 342, 40), W("5.87", 410, 341, 60), W("THANKS", 200, 500)]
     assert project(ocr, gold) == ["O", "TOTAL", "O"]
+    # centre inside two overlapping gold boxes: the one the word overlaps best wins, not the first listed
+    loose = dict(text="STORE", quad=[0, 0, 300, 0, 300, 60, 0, 60], label="MERCHANT")
+    assert project([W("MAIN", 20, 42, 60)], [loose, dict(W("1 MAIN ST", 0, 40, 150), label="ADDRESS")]) == ["ADDRESS"]
+    qty = [dict(W("2", 20, 340), label="ITEM_QTY")]  # centres 1 px / 5 px right of it; tolerance 0.1 x 20 px
+    assert project([W("2", 27, 340), W("2", 31, 340)], qty) == ["ITEM_QTY", "O"]

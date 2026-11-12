@@ -28,11 +28,11 @@ def test_group_and_order_undo_skew():
         assert rows.order(quads, rows.group(quads)) == list(range(len(quads)))
 
 
-def test_skew_matters():
-    """Without deskew, 4 degrees over 600 px (42 px drop) is more than a row; prove the test bites."""
-    quads, truth = _receipt(4)
-    flat = [[q[0], q[1], q[2], q[1], q[2], q[5], q[0], q[5]] for q in quads]  # axis-aligned, still skewed
-    assert rows.group(flat) != [r for r, _ in truth]
+def test_stacked_words_split():
+    """Boxes taller than the line pitch: words stacked in x are on different lines (they once merged)."""
+    q = lambda x0, y0, x1, y1: [x0, y0, x1, y0, x1, y1, x0, y1]  # noqa: E731
+    quads = [q(0, 0, 100, 30), q(200, 0, 300, 30), q(0, 12, 100, 42), q(200, 12, 300, 42)]
+    assert rows.group(quads) == [0, 0, 1, 1]
 
 
 def test_empty():

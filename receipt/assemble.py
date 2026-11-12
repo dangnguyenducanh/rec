@@ -99,8 +99,18 @@ def norm_text(s: str | None) -> str | None:
 
 
 def _qty(s: str) -> str | None:
+    """'2 x' -> '2', '1.00' -> '1'; weights keep their decimals ('0,896' -> '0.896'), as CORD gold does."""
     m = re.search(r"\d+(?:[.,]\d+)?", s)
-    return m.group().replace(",", ".") if m else None
+    if not m:
+        return None
+    v = m.group().replace(",", ".")
+    return str(int(float(v))) if float(v).is_integer() else v
+
+
+# a count written into the name: "(1x) TOBIKO", "Chicken Burrito (2 @6.70)"
+# (?!\d) keeps sizes like "4X4-8FT"; ponytail: a name that really starts with "2XL" loses "2X" to qty
+_NAME_QTY = [re.compile(r"^\(?\s*(\d{1,3})\s*[xX×](?!\d)\s*\)?\s*(?=\S)"),
+             re.compile(r"\s*\(?\s*(\d{1,3})\s*@\s*\$?\s*[\d.,]+\s*\)?\s*$")]
 
 
 def build(words: list[dict], labels: list[str], dayfirst: bool = False) -> Receipt:
@@ -117,13 +127,25 @@ def build(words: list[dict], labels: list[str], dayfirst: bool = False) -> Recei
     def last(lab):
         return next((v for t in reversed(by.get(lab, [])) if (v := norm_money(t)) is not None), None)
 
+    def total():
+        # last TOTAL run, skipping ones that repeat a TAX amount and preferring 2-decimal ones;
+        # each filter is dropped when it would leave nothing
+        c = [(t, v) for t in by.get("TOTAL", []) if (v := norm_money(t)) is not None]
+        taxes = {norm_money(t) for t in by.get("TAX", [])}
+        c = [x for x in c if x[1] not in taxes] or c
+        c = [x for x in c if re.search(r"\d[.,]\d\d(?!\d)", x[0])] or c
+        return c[-1][1] if c else None
+
     date = first("DATE", norm_date, dayfirst)
+    # first address block only: more than one unlabelled row before the next ADDRESS word starts another (bill-to)
+    addr = [(r, t) for r, lab, t in seq if lab == "ADDRESS"]
+    n = next((i for i in range(1, len(addr)) if addr[i][0] > addr[i - 1][0] + 2), len(addr))
     return Receipt(
         merchant=by.get("MERCHANT", [None])[0],
-        address=" ".join(by["ADDRESS"]) if "ADDRESS" in by else None,
+        address=" ".join(t for _, t in addr[:n]) or None,
         date=dt.date.fromisoformat(date) if date else None,
         time=first("TIME", norm_time),
-        subtotal=last("SUBTOTAL"), tax=last("TAX"), tips=last("TIPS"), total=last("TOTAL"),
+        subtotal=last("SUBTOTAL"), tax=last("TAX"), tips=last("TIPS"), total=total(),
         items=_items(seq),
     )
 
@@ -132,13 +154,16 @@ def _items(seq: list[tuple[int, str, str]]) -> list[Item]:
     """One item per row with ITEM_NAME, qty/price from the same row. Name-only rows wait for the next
     adjacent qty/price row (a name wrapped above its price). Exception: a name-only row right under a
     one-line priced item continues that item (a name wrapped below its price), unless the row after it
-    is a name-less qty/price row."""
+    is a name-less qty/price row. A name-less qty/price row with no name waiting fills the price of a
+    priceless item right above it, else pairs with the next row (its qty, or its name and price).
+    Items still without a price are dropped (modifier / sub-lines)."""
     per_row = {}  # row -> ([names], [qtys], [prices]), runs within the row in x order
     slot = {"ITEM_NAME": 0, "ITEM_QTY": 1, "ITEM_PRICE": 2}
     for (r, lab), g in groupby(seq, key=lambda x: x[:2]):
         if lab in slot:
             per_row.setdefault(r, ([], [], []))[slot[lab]].append(" ".join(t for *_, t in g))
     items, pending, pend_row, last_row, one_line = [], [], None, None, False
+    orphan = None  # (row, qty, prices) of a name-less qty/price row with no name waiting above it
     for r in sorted(per_row):
         names, qtys, prices = per_row[r]
         prices = [p for t in prices if (p := norm_money(t)) is not None]
@@ -146,12 +171,29 @@ def _items(seq: list[tuple[int, str, str]]) -> list[Item]:
         if pending and r != pend_row + 1:  # gap: the waiting name stands alone
             items.append(Item(name=" ".join(pending)))
             pending = []
+        orph, orphan = (orphan if orphan and orphan[0] == r - 1 else None), None
+        if (prices or qty is not None) and not names and not pending:
+            if items and last_row == r - 1 and items[-1].price is None and prices:  # price wrapped below its item
+                items[-1].price = prices[-1]
+                items[-1].qty = items[-1].qty or qty
+            else:
+                orphan = (r, qty, prices)
+            continue
         if prices or qty is not None:
             if pending or names:
-                items.append(Item(name=" ".join(pending + names), qty=qty, price=prices[-1] if prices else None,
+                if orph and qty is None:  # qty printed on the row above ("3X" over "NAME 19,500")
+                    qty = orph[1]
+                name = " ".join(pending + names)
+                for rx in _NAME_QTY:
+                    if (m := rx.search(name)) and len(m.group()) < len(name):
+                        qty, name = qty or m[1], name[:m.start()] + name[m.end():]
+                items.append(Item(name=name, qty=qty, price=prices[-1] if prices else None,
                                   unit_price=prices[0] if len(prices) > 1 else None))
                 last_row, one_line = r, not pending and bool(names)
             pending = []
+        elif names and orph and orph[2]:  # name printed under its qty/price row
+            items.append(Item(name=" ".join(names), qty=orph[1], price=orph[2][-1]))
+            last_row, one_line = r, True
         elif names:
             nxt = per_row.get(r + 1)
             if not pending and one_line and last_row == r - 1 and not (nxt and not nxt[0] and (nxt[1] or nxt[2])):
@@ -161,4 +203,4 @@ def _items(seq: list[tuple[int, str, str]]) -> list[Item]:
                 pending, pend_row = pending + names, r
     if pending:
         items.append(Item(name=" ".join(pending)))
-    return items
+    return [i for i in items if i.price is not None]  # a line without a price is a modifier / sub-line

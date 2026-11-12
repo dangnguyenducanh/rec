@@ -47,19 +47,42 @@ def log(*a):
     print(time.strftime("%H:%M:%S"), *a, flush=True)
 
 
+PROJECT_TOL = 0.1  # x word height; 0.05-0.15 all help, 0.25+ starts mislabelling WildReceipt header fields
+
+
 def project(ocr_words: list[dict], gold: list[dict]) -> list[str]:
-    """Label of the gold quad containing the OCR word's centre, else O."""
+    """Label of the gold quad containing the OCR word's centre. Loose gold boxes overlap: when several contain
+    it, the one the word overlaps best (IoU) wins. When none does, the nearest quad within PROJECT_TOL word
+    heights (narrow words such as a qty '2' in an offset box); else O."""
     polys = [np.asarray(g["quad"], np.float32).reshape(4, 2) for g in gold]
     out = []
     for w in ocr_words:
         q = w["quad"]
         c = (float(sum(q[0::2]) / 4), float(sum(q[1::2]) / 4))
-        out.append(next((g["label"] or "O" for g, p in zip(gold, polys) if cv2.pointPolygonTest(p, c, False) >= 0), "O"))
+        d = [cv2.pointPolygonTest(p, c, True) for p in polys]  # signed distance, >= 0 inside
+        hits = [k for k, v in enumerate(d) if v >= 0]
+        if len(hits) > 1:
+            wp = np.asarray(q, np.float32).reshape(4, 2)
+            k = max(hits, key=lambda k: _iou(wp, polys[k]))
+        elif hits:
+            k = hits[0]
+        else:
+            k = max(range(len(d)), key=d.__getitem__, default=None)
+            if k is not None and d[k] < -PROJECT_TOL * math.dist(q[:2], q[6:]):
+                k = None
+        out.append(gold[k]["label"] or "O" if k is not None else "O")
     return out
 
 
+def _iou(a: np.ndarray, b: np.ndarray) -> float:
+    a, b = cv2.convexHull(a), cv2.convexHull(b)
+    inter = cv2.intersectConvexConvex(a, b)[0]
+    return inter / (cv2.contourArea(a) + cv2.contourArea(b) - inter + 1e-9)
+
+
 SROIE_VAL_EVERY = 10  # SROIE ships train/test only: every 10th train receipt (by id) is the val split
-TOTAL_ROW = re.compile(r"(?<!SUB)(?<!SUB )TOTAL|AMOUNT|NETT|JUMLAH|DUE")
+TOTAL_ROW = re.compile(r"(?<!SUB)(?<!SUB[ .-])TOTAL|AMOUNT|NETT|JUMLAH|DUE")
+PAY_ROW = re.compile(r"CASH|CHANGE|PAID|TENDER")  # a payment row that happens to equal the total
 
 
 def _best_span(words, order, target, starts, max_len) -> tuple[float, range]:
@@ -80,9 +103,10 @@ def _best_span(words, order, target, starts, max_len) -> tuple[float, range]:
 
 def weak_labels(words: list[dict], gold: dict, dayfirst: bool) -> list[str]:
     """Word labels from document-level gold (SROIE): merchant / address = best fuzzy span (ratio >= 0.8),
-    date = first 1-3 word span that parses to the gold date, total = words worth the gold total, those on a
-    TOTAL / AMOUNT row when there are any."""
-    labs = ["O"] * len(words)
+    date = the shortest 1-3 word span that parses to the gold date, total = words worth the gold total, those
+    on a TOTAL / AMOUNT row when there are any. SROIE annotates nothing else, so its item, time and tax words
+    are not O: they get None (ignored in training), except on the matched fields' own rows ("TOTAL:", "DATE")."""
+    labs = [None] * len(words)
     if not words:
         return labs
     quads = [w["quad"] for w in words]
@@ -95,12 +119,12 @@ def weak_labels(words: list[dict], gold: dict, dayfirst: bool) -> list[str]:
         r, span = _best_span(words, order, target, range(min(n_start, len(order))), max_len)
         if r >= 0.8:
             for k in span:
-                if labs[order[k]] == "O":
+                if labs[order[k]] is None:
                     labs[order[k]] = lab
     if gold.get("date"):
         done = False
-        for k in range(len(order)):
-            for n in (1, 2, 3):
+        for n in (1, 2, 3):  # shortest span first: norm_date finds a date inside longer text too
+            for k in range(len(order)):
                 span = order[k:k + n]
                 if len(span) == n and norm_date(" ".join(words[i]["text"] for i in span), dayfirst) == gold["date"]:
                     for i in span:
@@ -111,15 +135,16 @@ def weak_labels(words: list[dict], gold: dict, dayfirst: bool) -> list[str]:
                 break
     total = norm_money(gold.get("total"))
     if total:
-        hits = [i for i in order if labs[i] == "O" and re.search(r"\d", words[i]["text"])
+        hits = [i for i in order if labs[i] is None and re.search(r"\d", words[i]["text"])
                 and norm_money(words[i]["text"]) == total]
         row_text = defaultdict(str)
         for i in order:
             row_text[rid[i]] += " " + words[i]["text"].upper()
-        keyed = [i for i in hits if TOTAL_ROW.search(row_text[rid[i]])]
+        keyed = [i for i in hits if TOTAL_ROW.search(row_text[rid[i]]) and not PAY_ROW.search(row_text[rid[i]])]
         for i in keyed or hits:
             labs[i] = "TOTAL"
-    return labs
+    field_rows = {rid[i] for i, lab in enumerate(labs) if lab}
+    return [lab or ("O" if rid[i] in field_rows else None) for i, lab in enumerate(labs)]
 
 
 def load_split(phase: str, split: str, dataset: str = "wildreceipt") -> tuple[list[dict], dict | None]:
@@ -132,7 +157,8 @@ def load_split(phase: str, split: str, dataset: str = "wildreceipt") -> tuple[li
     return recs, (ocr.load_cache("paddle", "2345", dataset, src) if phase == "B" else None)
 
 
-def labels_for(rec: dict, words: list[dict], gold: bool) -> list[str]:
+def labels_for(rec: dict, words: list[dict], gold: bool) -> list[str | None]:
+    """One label per word; None = unannotated (SROIE), ignored by the loss."""
     if rec["dataset"] == "sroie":
         return weak_labels(words, rec["gold"], rec["dayfirst"])
     return [w["label"] or "O" for w in rec["words"]] if gold else project(words, rec["words"])
@@ -143,7 +169,7 @@ def examples(recs, cache, gold_copies: bool = False) -> list[tuple[dict, list[st
     out = []
     for r in recs:
         variants = []
-        if cache is None or gold_copies:
+        if cache is None or (gold_copies and r["dataset"] != "sroie"):  # SROIE gold text is cut at commas
             variants.append((gold_words(r), True))
         if cache is not None and r["id"] in cache:
             variants.append((cache[r["id"]]["words"], False))
@@ -197,7 +223,7 @@ class Collate:
                     img, quads = augment(img, quads)
                 image = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
             enc = T.encode(self.proc, self.kind, texts, T.boxes_1000(quads, W, H), image)
-            ids = [LABELS.index(labels[i]) for i in order]
+            ids = [LABELS.index(labels[i]) if labels[i] else -100 for i in order]
             lab = torch.full(enc["input_ids"].shape, -100, dtype=torch.long)
             for k, t, wid in T.first_subtokens(enc):
                 lab[k, t] = ids[wid]

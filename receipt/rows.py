@@ -3,6 +3,7 @@ import math
 import statistics
 
 TAU = 0.45  # best pairwise same-row F1 on CORD val gold boxes (0.986); eval/diagnostics/rows.json
+XOV = 0.3  # max x-overlap (fraction of the narrower word) with a row member; 0.2-0.5 score the same
 
 
 def _deskew(quads: list[list[float]]) -> list[tuple[float, float, float, float]]:
@@ -23,10 +24,16 @@ def group(quads: list[list[float]], tau: float = TAU) -> list[int]:
     boxes = _deskew(quads)
     rows = []  # [sum of tops, sum of bottoms, member indices]
     for i in sorted(range(len(boxes)), key=lambda i: boxes[i][1] + boxes[i][3]):
-        _, y0, _, y1 = boxes[i]
+        x0, y0, x1, y1 = boxes[i]
         best, best_ov = None, 0.0
         for r in rows:
-            top, bot = r[0] / len(r[2]), r[1] / len(r[2])
+            # two words overlapping in x are on different lines (Paddle boxes can be taller than the pitch)
+            if any(min(x1, boxes[j][2]) - max(x0, boxes[j][0]) > XOV * min(x1 - x0, boxes[j][2] - boxes[j][0])
+                   for j in r[2]):
+                continue
+            # judge against the member nearest in x, so a curved or skewed line does not drift
+            j = min(r[2], key=lambda j: max(boxes[j][0] - x1, x0 - boxes[j][2], 0))
+            top, bot = boxes[j][1], boxes[j][3]
             ov = min(y1, bot) - max(y0, top)
             if ov > tau * min(y1 - y0, bot - top) and ov > best_ov:
                 best, best_ov = r, ov
