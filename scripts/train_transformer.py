@@ -83,6 +83,7 @@ def _iou(a: np.ndarray, b: np.ndarray) -> float:
 SROIE_VAL_EVERY = 10  # SROIE ships train/test only: every 10th train receipt (by id) is the val split
 TOTAL_ROW = re.compile(r"(?<!SUB)(?<!SUB[ .-])TOTAL|AMOUNT|NETT|JUMLAH|DUE")
 PAY_ROW = re.compile(r"CASH|CHANGE|PAID|TENDER")  # a payment row that happens to equal the total
+TIME_WORD = re.compile(r"\d{1,2}:\d{2}|^[AP]\.?M\.?$", re.I)  # SROIE does not annotate time: never teach it as O
 
 
 def _best_span(words, order, target, starts, max_len) -> tuple[float, range]:
@@ -105,7 +106,7 @@ def weak_labels(words: list[dict], gold: dict, dayfirst: bool) -> list[str]:
     """Word labels from document-level gold (SROIE): merchant / address = best fuzzy span (ratio >= 0.8),
     date = the shortest 1-3 word span that parses to the gold date, total = words worth the gold total, those
     on a TOTAL / AMOUNT row when there are any. SROIE annotates nothing else, so its item, time and tax words
-    are not O: they get None (ignored in training), except on the matched fields' own rows ("TOTAL:", "DATE")."""
+    are not O: words below the header block get None (ignored in training), except on the fields' rows."""
     labs = [None] * len(words)
     if not words:
         return labs
@@ -143,8 +144,12 @@ def weak_labels(words: list[dict], gold: dict, dayfirst: bool) -> list[str]:
         keyed = [i for i in hits if TOTAL_ROW.search(row_text[rid[i]]) and not PAY_ROW.search(row_text[rid[i]])]
         for i in keyed or hits:
             labs[i] = "TOTAL"
+    # O where SROIE's four fields tell us the rest is not a field: the header block down to the last
+    # merchant/address row (person, phone, registration lines) and the fields' own rows; times never
+    head = max((rid[i] for i, lab in enumerate(labs) if lab in ("MERCHANT", "ADDRESS")), default=-1)
     field_rows = {rid[i] for i, lab in enumerate(labs) if lab}
-    return [lab or ("O" if rid[i] in field_rows else None) for i, lab in enumerate(labs)]
+    return [lab or ("O" if (rid[i] in field_rows or rid[i] <= head) and not TIME_WORD.search(words[i]["text"])
+                    else None) for i, lab in enumerate(labs)]
 
 
 def load_split(phase: str, split: str, dataset: str = "wildreceipt") -> tuple[list[dict], dict | None]:

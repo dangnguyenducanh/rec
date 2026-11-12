@@ -105,8 +105,13 @@ Diagnostic: pairwise same-row P/R on CORD test (`row_id`), on gold boxes and Pad
 | `layoutlmv3` | `microsoft/layoutlmv3-base`, text + boxes (0–1000) + image. `apply_ocr=False`; first sub-token labeled, rest `-100`; >512 tokens → overflow windows, stride 128, keep higher-confidence prediction. |
 
 LayoutLMv3 training: lr ~3e-5, batch 4, fp16, early stop on val score (§5). Two phases:
-**A** on gold OCR words; **B** fine-tune on Paddle OCR words with labels projected from gold by
-IoU ≥ 0.5 (unmatched → `O`). Augment with small rotation/scale applied to image and boxes together.
+**A** on gold OCR words; **B** fine-tune on Paddle OCR words with labels projected from gold (the gold box holding
+the word's centre; IoU breaks ties between overlapping boxes; a centre within 0.1 word height of a box still counts;
+unmatched → `O`). Augment with small rotation/scale applied to image and boxes together.
+**B4** (served): phase B on WildReceipt + CORD + SROIE train Paddle words. SROIE has document-level gold only, so its
+words get weak labels (fuzzy merchant/address span, parsed date, total amount on a TOTAL row); unannotated SROIE words
+below the header block are left out of the loss (`-100`), never trained as `O`. Early stopping on the mean of the four
+val F1s that serving ranks by; SROIE val = every 10th SROIE train receipt.
 GPU ~6–8 GB (fits the ≤14–15 GB budget on the shared host).
 License note: LayoutLMv3 weights are CC BY-NC-SA (non-commercial; fine for a portfolio). LiLT (MIT)
 is the drop-in if that ever matters.
@@ -281,3 +286,7 @@ GPU rule: one transformer training job at a time (≤14–15 GB shared budget); 
   Paddle OCR, not field F1 alone: on fields alone rules edge out LayoutLMv3-B (0.707 vs 0.698) while finding about half
   its items. Field F1 stays the benchmark's headline metric.
 - A confidently identified non-restaurant merchant rules out `dining` for its items.
+- SROIE train is training data for LayoutLMv3-B4 (weak labels), so SROIE test is no longer out of domain for B4; it
+  still is for every other learned extractor.
+- Assembly changes are chosen on val only (WildReceipt val, CORD val, the SROIE val tenth), each kept if it raised
+  LayoutLMv3-B's val 4-F1 mean by ≥ 0.003 without lowering rules or CRF; every benchmark row is then re-run.
