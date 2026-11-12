@@ -1,15 +1,23 @@
 """Train roberta | layoutlmv3, phase A (gold words) | B (paddle-s2345 words, labels projected from gold).
 
 .venv/bin/python -s scripts/train_transformer.py --model layoutlmv3 --phase A [--max-steps N] [--out DIR]
-Early stopping on WildReceipt val field F1 (assemble + score); best checkpoint -> models/{model}-{phase}/.
-Phase B starts from models/{model}-A/.
+.venv/bin/python -s scripts/train_transformer.py --model layoutlmv3 --phase B --datasets wildreceipt,cord,sroie \
+    [--gold-copies] --out models/layoutlmv3-B2
+Training data: the train splits of --datasets. SROIE has document-level gold only, so its words get weak labels
+(fuzzy span match of merchant/address, parsed date, total amount); every 10th SROIE train receipt is held out as val.
+Early stopping on the mean of four val F1s, the serving criterion: WildReceipt field + item, SROIE field, CORD item.
+Best checkpoint -> models/{model}-{phase}/. Phase B starts from models/{model}-A/.
 """
 import argparse
 import json
 import math
 import random
+import re
+import statistics
 import sys
 import time
+from collections import defaultdict
+from difflib import SequenceMatcher
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,10 +28,12 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from benchmark import doc_of, field_f1, load_gold, run  # noqa: E402
-from receipt import ocr  # noqa: E402
+from benchmark import doc_of, gold_words, load_gold, run  # noqa: E402
+from receipt import ocr, rows  # noqa: E402
+from receipt.assemble import norm_date, norm_money, norm_text  # noqa: E402
 from receipt.extractors import transformer as T  # noqa: E402
 from receipt.schema import LABELS  # noqa: E402
+from receipt.score import score  # noqa: E402
 
 cv2.setNumThreads(1)  # dataloader workers: keep CPU use to ~4 cores
 
@@ -48,26 +58,111 @@ def project(ocr_words: list[dict], gold: list[dict]) -> list[str]:
     return out
 
 
-def load_split(phase: str, split: str) -> tuple[list[dict], dict | None]:
+SROIE_VAL_EVERY = 10  # SROIE ships train/test only: every 10th train receipt (by id) is the val split
+TOTAL_ROW = re.compile(r"(?<!SUB)(?<!SUB )TOTAL|AMOUNT|NETT|JUMLAH|DUE")
+
+
+def _best_span(words, order, target, starts, max_len) -> tuple[float, range]:
+    """Reading-order word span whose joined text best matches target (difflib ratio, spaces ignored)."""
+    best = (0.0, range(0))
+    for s in starts:
+        txt = ""
+        for e in range(s, min(s + max_len, len(order))):
+            txt += norm_text(words[order[e]]["text"]) or ""
+            if len(txt) > 1.3 * len(target):
+                break
+            if len(txt) >= 0.7 * len(target):
+                r = SequenceMatcher(None, txt, target, autojunk=False).ratio()
+                if r > best[0]:
+                    best = (r, range(s, e + 1))
+    return best
+
+
+def weak_labels(words: list[dict], gold: dict, dayfirst: bool) -> list[str]:
+    """Word labels from document-level gold (SROIE): merchant / address = best fuzzy span (ratio >= 0.8),
+    date = first 1-3 word span that parses to the gold date, total = words worth the gold total, those on a
+    TOTAL / AMOUNT row when there are any."""
+    labs = ["O"] * len(words)
+    if not words:
+        return labs
+    quads = [w["quad"] for w in words]
+    rid = rows.group(quads)
+    order = rows.order(quads, rid)
+    for field, lab, n_start, max_len in (("merchant", "MERCHANT", 60, 25), ("address", "ADDRESS", 100, 60)):
+        target = norm_text(gold.get(field))
+        if not target:
+            continue
+        r, span = _best_span(words, order, target, range(min(n_start, len(order))), max_len)
+        if r >= 0.8:
+            for k in span:
+                if labs[order[k]] == "O":
+                    labs[order[k]] = lab
+    if gold.get("date"):
+        done = False
+        for k in range(len(order)):
+            for n in (1, 2, 3):
+                span = order[k:k + n]
+                if len(span) == n and norm_date(" ".join(words[i]["text"] for i in span), dayfirst) == gold["date"]:
+                    for i in span:
+                        labs[i] = "DATE"
+                    done = True
+                    break
+            if done:
+                break
+    total = norm_money(gold.get("total"))
+    if total:
+        hits = [i for i in order if labs[i] == "O" and re.search(r"\d", words[i]["text"])
+                and norm_money(words[i]["text"]) == total]
+        row_text = defaultdict(str)
+        for i in order:
+            row_text[rid[i]] += " " + words[i]["text"].upper()
+        keyed = [i for i in hits if TOTAL_ROW.search(row_text[rid[i]])]
+        for i in keyed or hits:
+            labs[i] = "TOTAL"
+    return labs
+
+
+def load_split(phase: str, split: str, dataset: str = "wildreceipt") -> tuple[list[dict], dict | None]:
     """(gold records, paddle cache or None). Phase A uses gold words."""
-    recs = load_gold("wildreceipt", split)
-    return recs, (ocr.load_cache("paddle", "2345", "wildreceipt", split) if phase == "B" else None)
+    src = "train" if dataset == "sroie" else split
+    recs = load_gold(dataset, src)
+    if dataset == "sroie":
+        recs = [r for i, r in enumerate(sorted(recs, key=lambda r: r["id"]))
+                if (i % SROIE_VAL_EVERY == 0) == (split == "val")]
+    return recs, (ocr.load_cache("paddle", "2345", dataset, src) if phase == "B" else None)
 
 
-def examples(recs, cache) -> list[tuple[dict, list[str]]]:
+def labels_for(rec: dict, words: list[dict], gold: bool) -> list[str]:
+    if rec["dataset"] == "sroie":
+        return weak_labels(words, rec["gold"], rec["dayfirst"])
+    return [w["label"] or "O" for w in rec["words"]] if gold else project(words, rec["words"])
+
+
+def examples(recs, cache, gold_copies: bool = False) -> list[tuple[dict, list[str]]]:
+    """Phase A: gold words. Phase B: Paddle words, plus the gold words too when gold_copies."""
     out = []
     for r in recs:
-        if cache is None:
-            words = [{"text": w["text"], "quad": w["quad"]} for w in r["words"]]
-            labs = [w["label"] or "O" for w in r["words"]]
-        elif r["id"] in cache:
-            words = cache[r["id"]]["words"]
-            labs = project(words, r["words"])
-        else:
-            continue
-        if words:
-            out.append((doc_of(r, words), labs))
+        variants = []
+        if cache is None or gold_copies:
+            variants.append((gold_words(r), True))
+        if cache is not None and r["id"] in cache:
+            variants.append((cache[r["id"]]["words"], False))
+        for words, gold in variants:
+            if words:
+                out.append((doc_of(r, words), labels_for(r, words, gold)))
     return out
+
+
+def val_score(fn, vals: dict) -> tuple[float, dict]:
+    """Mean of WildReceipt field + item F1, SROIE field F1 and CORD item F1 on the val splits."""
+    s = {}
+    for ds, (recs, cache) in vals.items():
+        sc = score([(r["pred"], r["gold"], r["rec"]) for r in run(fn, recs, cache)])
+        if ds != "cord":
+            s[f"{ds}_field_f1"] = sc["field_f1"]
+        if ds != "sroie":
+            s[f"{ds}_item_f1"] = sc["item_f1"]
+    return round(statistics.mean(s.values()), 4), s
 
 
 def augment(img: np.ndarray, quads: list[list[float]]):
@@ -131,14 +226,17 @@ def main():
     ap.add_argument("--patience", type=int, default=4)
     ap.add_argument("--batch", type=int, default=4)
     ap.add_argument("--accum", type=int, default=1, help="gradient accumulation steps")
+    ap.add_argument("--datasets", default="wildreceipt", help="train splits to train on, e.g. wildreceipt,cord,sroie")
+    ap.add_argument("--gold-copies", action="store_true", help="phase B: also train on the gold words")
     a = ap.parse_args()
     from transformers import AutoModelForTokenClassification, get_linear_schedule_with_warmup
 
     out = Path(a.out) if a.out else ROOT / f"models/{a.model}-{a.phase}"
     init = BASE[a.model] if a.phase == "A" else str(ROOT / f"models/{a.model}-A")
-    train = examples(*load_split(a.phase, "train"))
-    val_recs, val_cache = load_split(a.phase, "val")
-    log(f"{a.model}-{a.phase}: {len(train)} train docs, {len(val_recs)} val docs, init {init} -> {out}")
+    train = [ex for ds in a.datasets.split(",") for ex in examples(*load_split(a.phase, "train", ds), a.gold_copies)]
+    vals = {ds: load_split(a.phase, "val", ds) for ds in ("wildreceipt", "sroie", "cord")}
+    log(f"{a.model}-{a.phase}: {len(train)} train docs ({a.datasets}{', + gold words' if a.gold_copies else ''}), "
+        f"val {[len(v[0]) for v in vals.values()]}, init {init} -> {out}")
 
     wait_for_gpu()
     torch.manual_seed(0)
@@ -180,22 +278,23 @@ def main():
                     break
         model.eval()
         te = time.time()
-        f1 = field_f1(run(T.predictor(model, proc, a.model), val_recs, val_cache))
-        hist.append({"epoch": epoch, "step": step, "loss": round(float(np.mean(losses)), 4), "val_field_f1": f1,
-                     "eval_s": round(time.time() - te, 1), "elapsed_s": round(time.time() - t0, 1)})
+        f1, parts = val_score(T.predictor(model, proc, a.model), vals)
+        hist.append({"epoch": epoch, "step": step, "loss": round(float(np.mean(losses)), 4), "val_mean_f1": f1,
+                     **parts, "eval_s": round(time.time() - te, 1), "elapsed_s": round(time.time() - t0, 1)})
         log(json.dumps(hist[-1]))
         if f1 > best:
             best, bad = f1, 0
             model.save_pretrained(out)
             proc.save_pretrained(out)
-            log(f"saved best (val field F1 {f1}) -> {out}")
+            log(f"saved best (val mean F1 {f1}) -> {out}")
         else:
             bad += 1
-        (out / "train_log.json").write_text(json.dumps({"best_val_field_f1": best, "history": hist,
+        (out / "train_log.json").write_text(json.dumps({"best_val_mean_f1": best, "datasets": a.datasets,
+                                                        "gold_copies": a.gold_copies, "history": hist,
                                                         "s_per_step": round((time.time() - t0) / max(step, 1), 3)}, indent=1))
         if step == a.max_steps or bad >= a.patience:
             break
-    log(f"done: best val field F1 {best}, {step} steps, {time.time() - t0:.0f} s")
+    log(f"done: best val mean F1 {best}, {step} steps, {time.time() - t0:.0f} s")
 
 
 if __name__ == "__main__":

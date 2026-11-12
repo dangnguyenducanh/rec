@@ -16,7 +16,6 @@ from receipt.extractors import get
 from receipt.schema import Item, Receipt
 
 ROOT = Path(__file__).resolve().parent.parent
-NAMES = ["rules", "crf", "roberta-A", "layoutlmv3-A", "layoutlmv3-B"]
 STEPS = "".join(map(str, preprocess.STEPS_DEFAULT))  # results.csv writes steps as digits
 log = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ def choose() -> str:
     with open(ROOT / "eval/results.csv") as f:
         for r in csv.DictReader(f):
             name, src = r["extractor"], r["ocr"]
-            if name not in NAMES or not _available(name):
+            if not _available(name):  # a results row whose model is not on disk
                 continue
             if not (src == "gold" or (src == "paddle" and r["steps"] == STEPS)):
                 continue
