@@ -82,8 +82,8 @@ image ─► 1 preprocess ─► 2 OCR ─► 3 row grouping ─► 4 extractor 
 Every step is a flag (`--steps 1,2,3,4,5`) so the benchmark can ablate it. Ground-truth boxes are
 transformed with the returned matrices before scoring.
 
-Diagnostics: blur-gate false-reject rate (<5%) on synthetic blur of SROIE + 100 hand-tagged
-WildReceipt photos; warp IoU vs CORD `roi` (>0.85); deskew error on synthetically rotated SROIE
+Diagnostics: blur-gate false-reject rate (<5%) on SROIE scans blurred on purpose at known
+strengths (the label is the blur applied, so nothing is tagged by hand); warp IoU vs CORD `roi` (>0.85); deskew error on synthetically rotated SROIE
 scans (median <0.5°). *Pass bars are the builder's guesses.*
 
 ### Stage 2 — OCR
@@ -117,14 +117,31 @@ Token labels + rows → Receipt JSON. Contiguous same-label words merge into one
 Values normalized (money → 2-decimal string, dates → ISO). **Shared by every extractor**, so the
 benchmark compares extractors, not assembly code.
 
-### Stage 6 — Categorization (no LLM)
-- Labels you create: ~800 unique item names (WildReceipt `Prod_item_value`, normalized + deduped,
-  pre-labeled by keyword rules then hand-corrected) and ~300 merchant names (SROIE + WildReceipt).
-  Stored in `labels/items.csv`, `labels/merchants.csv`. Split 70/15/15 **after dedupe**.
-- Item level: keyword dictionary baseline vs TF-IDF char 3–5-grams + logistic regression.
-- Receipt level: merchant classifier if its probability ≥ θ, else the item category with the most
+### Stage 6 — Categorization (no LLM, **no manual labeling**)
+Every training label comes from a public dataset that is already labelled; nobody tags anything.
+`scripts/build_category_data.py` downloads and maps them into `data/categories/{items,merchants}.csv`.
+
+| Labels for | Source (already labelled) | Mapping to our categories |
+|---|---|---|
+| Item names | **Instacart Online Grocery** `products.csv`: ~49.7k product names, each with an aisle and one of 21 departments | Department → category: produce, dairy eggs, bakery, meat seafood, deli, frozen, pantry, canned goods, dry goods pasta, breakfast, snacks, international, bulk → `groceries`; beverages, alcohol → `drinks`; household, pets, babies → `household`; personal care → `health`; missing, other → `other` |
+| Item names (restaurant) | **CORD** `menu.nm` strings (every CORD receipt is a restaurant/café) | → `dining` |
+| Merchant names | **OpenStreetMap** POI names via Overpass, several US cities, by tag | `shop=supermarket/convenience/greengrocer` → groceries; `amenity=restaurant/fast_food/cafe` → dining; `amenity=bar/pub`, `shop=alcohol` → drinks; `shop=hardware/doityourself/houseware` → household; `amenity=pharmacy`, `shop=chemist` → health; `amenity=fuel` → transport_fuel; `shop=clothes/shoes` → clothing; `shop=electronics/mobile_phone` → electronics; `shop=hairdresser/laundry/dry_cleaning` → services (ODbL, attributed) |
+
+- **Receipt-style names:** product names are clean ("Organic Bananas") but receipts abbreviate
+  ("ORG BNNA 2LB"), so training adds generated variants: uppercase, vowels dropped, words cut to
+  3–5 letters, truncated to 16–20 characters, sizes appended. Rule-based, deterministic.
+- **Item level:** keyword dictionary baseline vs TF-IDF char 3–5-grams + logistic regression.
+  Instacart only covers groceries, drinks, household, health and other, so an item **inherits the
+  merchant's category** when the merchant is confidently dining, fuel, clothing, electronics or
+  services (a restaurant's items are dining); the item classifier runs for groceries and general stores.
+- **Receipt level:** merchant classifier if its probability ≥ θ, else the item category with the most
   money on the receipt.
-- Scored by macro-F1 (items, merchants) and accuracy on ~150 hand-labeled receipts.
+- **Splits:** 70/15/15, grouped so a product or merchant name (normalized) never sits in two splits;
+  chain names (e.g. every "Safeway") stay in one split.
+- **Scores (no hand-labeled set):** macro-F1 on held-out Instacart products, reported on clean
+  names and on their receipt-style variants; macro-F1 on held-out OSM merchant names; and a sanity
+  check that CORD test receipts come out `dining`. There is no gold category for WildReceipt or
+  SROIE receipts, so real-receipt category accuracy is not claimed.
 
 ### Stage 7 — Validation, storage, API
 - Checks: Σ item prices ≈ subtotal (±0.01); subtotal + tax (+ tips) ≈ total; date parses.
@@ -204,6 +221,7 @@ rec/
 │   ├── build_ocr_cache.py          run OCR once over every split
 │   ├── train_crf.py
 │   ├── train_transformer.py        --model roberta|layoutlmv3 --phase A|B
+│   ├── build_category_data.py      Instacart + CORD + OSM → data/categories/*.csv (no hand labels)
 │   ├── train_categorizer.py
 │   └── benchmark.py                one row → eval/results.csv
 ├── api/
@@ -212,7 +230,6 @@ rec/
 │   └── schema.sql                  tables
 ├── frontend/                       Vite + React + TS (Vercel)
 │   └── src/{types.ts, api.ts, App.tsx}
-├── labels/                         items.csv, merchants.csv (hand labels, committed)
 ├── eval/results.csv                benchmark table (committed)
 ├── tests/                          test_score.py, test_api.py, test_rows.py
 ├── data/   models/                 gitignored
@@ -231,7 +248,7 @@ Lane 0  ████ contract + data + scorer
 Lane W       ██████████████ web: API(stub) + DB + React + Vercel + tunnel ──► done early
 Lane V  ██████████ preprocess + Paddle OCR cache + rows ─► ablation rows in benchmark
 Lane M       ██ rules+CRF ░░░░ roberta(bg) ░░░░░░ layoutlmv3 A(bg) ░░░ B(bg, needs V cache)
-Lane C       ████ pre-label items ── hand-label (you) ── TF-IDF clf
+Lane C       ████ build category data (Instacart/CORD/OSM) ── TF-IDF clf
 Lane I                                         ████ swap stub → real pipeline, e2e bench, redeploy
             (░ = GPU job running in background while other lanes code)
 ```
@@ -242,7 +259,7 @@ Lane I                                         ████ swap stub → real p
 | **W Web** | `schema.py` exists (hour 1) | API with stub `extract()`, Postgres, `PATCH` corrections, React UI, Vercel deploy, tunnel | Vercel URL: upload → stub receipt saved → listed → editable |
 | **V Vision/OCR** | now (needs only images) | Stage 1 + 2 + 3, `build_ocr_cache.py` for Paddle (+ Tesseract on test) | Paddle cache for all splits; `--ocr paddle` benchmark rows; ablation rows per preprocessing step |
 | **M Models** | Lane 0 done | `rules` → `crf` (CPU, minutes) → `roberta` (bg) → `layoutlmv3` phase A (bg) → phase B once Lane V cache exists | One benchmark row per extractor × OCR source |
-| **C Categories** | Lane 0 done | Pre-label item/merchant names, you hand-correct, train classifier | Macro-F1 on test split; receipt-level accuracy |
+| **C Categories** | Lane 0 done | `build_category_data.py` from public labelled data, train item + merchant classifiers | Macro-F1 on held-out items (clean + receipt-style) and merchants; CORD → dining check |
 | **I Integration** | M phase A + V + C done | `pipeline.py` uses best extractor + categorizer; e2e benchmark; redeploy | Live site returns real extractions |
 
 GPU rule: one transformer training job at a time (≤14–15 GB shared budget); Paddle OCR caching
